@@ -23,7 +23,8 @@ class TestDatabaseHelpers(unittest.TestCase):
     def test_format_pk(self):
         self.assertEqual(format_pk("KAMALA_01"), "HH#KAMALA_01")
         self.assertEqual(format_pk("HH#KAMALA_01"), "HH#KAMALA_01")
-        self.assertEqual(format_pk(""), "HH#KAMALA_01")
+        self.assertEqual(format_pk(""), "HH#kamala")
+        self.assertEqual(format_pk("kamala"), "HH#kamala")
 
     def test_put_and_get_item(self):
         item = {

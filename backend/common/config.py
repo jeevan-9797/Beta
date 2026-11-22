@@ -44,7 +44,10 @@ class Settings:
 
     # AWS Configuration (region ap-south-1 for Mumbai, India)
     AWS_REGION: str = os.getenv("AWS_REGION", "ap-south-1")
-    DYNAMODB_TABLE: str = os.getenv("DYNAMODB_TABLE", "BETA_Main")
+    DYNAMODB_TABLE: str = os.getenv("DYNAMODB_TABLE", "BETA_Household")
+    BEDROCK_MODEL_ID: str = os.getenv(
+        "BEDROCK_MODEL_ID", "apac.amazon.nova-micro-v1:0"
+    )
 
     # Local Mock DB mode (run offline without AWS credentials)
     LOCAL_MOCK_DB: bool = _get_bool("LOCAL_MOCK_DB", True)
@@ -58,7 +61,7 @@ class Settings:
     COOLING_OFF_SECONDS: int = _get_int(
         "COOLING_OFF_SECONDS", 20
     )  # 20s demo default, 1800s prod
-    DEFAULT_HOUSEHOLD_ID: str = os.getenv("DEFAULT_HOUSEHOLD_ID", "HH#KAMALA_01")
+    DEFAULT_HOUSEHOLD_ID: str = os.getenv("DEFAULT_HOUSEHOLD_ID", "kamala")
 
     # Twilio WhatsApp Credentials
     TWILIO_ACCOUNT_SID: str = os.getenv("TWILIO_ACCOUNT_SID", "")
@@ -90,6 +93,7 @@ settings = Settings()
 # Convenient top-level exports for direct import
 AWS_REGION = settings.AWS_REGION
 DYNAMODB_TABLE = settings.DYNAMODB_TABLE
+BEDROCK_MODEL_ID = settings.BEDROCK_MODEL_ID
 LOCAL_MOCK_DB = settings.LOCAL_MOCK_DB
 MOCK_DB_FILE = settings.MOCK_DB_FILE
 APPROVAL_TTL_SECONDS = settings.APPROVAL_TTL_SECONDS

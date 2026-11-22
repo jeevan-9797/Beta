@@ -1,8 +1,138 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "BETA Errands MCP Server Tools",
-  "description": "Errand tools for elderly care: paying bills, reordering medicines, and checking utilities in India.",
+  "description": "Errand tools for elderly care: paying bills, reordering medicines, scheduling appointments, and checking utilities in India.",
   "tools": [
+    {
+      "name": "get_profile",
+      "description": "Retrieve household profile details: parent name, guardian name, spending limits, and emergency frozen status.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "household_id": {
+            "type": "string",
+            "description": "Household ID, e.g. 'HH#kamala' or 'kamala'."
+          }
+        }
+      }
+    },
+    {
+      "name": "list_billers",
+      "description": "Retrieve registered utility billers (electricity, water, broadband) for the household.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "household_id": {
+            "type": "string",
+            "description": "Household ID."
+          }
+        }
+      }
+    },
+    {
+      "name": "list_payees",
+      "description": "Retrieve saved payees, pharmacies, and merchants registered for the household.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "household_id": {
+            "type": "string",
+            "description": "Household ID."
+          }
+        }
+      }
+    },
+    {
+      "name": "list_meds",
+      "description": "Retrieve registered chronic prescription medications, dosage instructions, and refill costs.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "household_id": {
+            "type": "string",
+            "description": "Household ID."
+          }
+        }
+      }
+    },
+    {
+      "name": "get_due_bills",
+      "description": "Retrieve all pending unpaid utility bills (e.g., BESCOM electricity ₹1,240 due 28 Nov).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "household_id": {
+            "type": "string",
+            "description": "Household ID."
+          }
+        }
+      }
+    },
+    {
+      "name": "find_slots",
+      "description": "Find available doctor and clinic appointment slots in Dharwad / Hubli.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "specialty": {
+            "type": "string",
+            "description": "Medical specialty (e.g., 'Cardiologist', 'General Physician', 'Endocrinologist')."
+          },
+          "date": {
+            "type": "string",
+            "description": "Target date in YYYY-MM-DD format or 'tomorrow'."
+          }
+        }
+      }
+    },
+    {
+      "name": "book_appointment",
+      "description": "Book a clinic appointment for the parent, creating a Google Calendar event and digital confirmation receipt.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "household_id": {
+            "type": "string",
+            "description": "Household ID."
+          },
+          "doctor_name": {
+            "type": "string",
+            "description": "Doctor name (e.g. 'Dr. Rao')."
+          },
+          "slot_iso": {
+            "type": "string",
+            "description": "Appointment start time in ISO 8601 format."
+          },
+          "patient_name": {
+            "type": "string",
+            "description": "Patient name (defaults to Kamala)."
+          }
+        },
+        "required": ["doctor_name", "slot_iso"]
+      }
+    },
+    {
+      "name": "set_reminder",
+      "description": "Schedule a reminder in Google Calendar and persist in household reminders.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "household_id": {
+            "type": "string",
+            "description": "Household ID."
+          },
+          "title": {
+            "type": "string",
+            "description": "Reminder title / task description."
+          },
+          "time_iso": {
+            "type": "string",
+            "description": "Target reminder time in ISO 8601 format."
+          }
+        },
+        "required": ["title", "time_iso"]
+      }
+    },
     {
       "name": "pay_bill",
       "description": "Pay an electricity, water, gas, or broadband bill for the elderly household through approved billers/payees via BBPS gateway.",
@@ -11,7 +141,7 @@
         "properties": {
           "household_id": {
             "type": "string",
-            "description": "Household ID, e.g. 'HH#KAMALA_01'."
+            "description": "Household ID, e.g. 'HH#kamala'."
           },
           "bill_id": {
             "type": "string",
@@ -81,6 +211,83 @@
       }
     },
     {
+      "name": "reorder_medicine",
+      "description": "Order chronic monthly medications from verified neighborhood pharmacies with Cedar guardrail enforcement.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "household_id": {
+            "type": "string",
+            "description": "Household ID."
+          },
+          "med_ids": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "List of medicine IDs to refill, e.g. ['METFORMIN_500MG', 'AMLODIPINE_5MG']."
+          },
+          "amount": {
+            "type": "number",
+            "description": "Total order amount in INR."
+          },
+          "idem_key": {
+            "type": "string",
+            "description": "Unique idempotency key."
+          },
+          "assessment_id": {
+            "type": "string",
+            "description": "Telemetry voice assessment identifier."
+          },
+          "approval_id": {
+            "type": "string",
+            "description": "Guardian approval ID if amount exceeds auto_limit."
+          },
+          "note": {
+            "type": "string",
+            "description": "Optional voice reason spoken by parent."
+          },
+          "pharmacy_name": {
+            "type": "string",
+            "description": "Pharmacy merchant name (defaults to Apollo Pharmacy)."
+          },
+          "payee_known": {
+            "type": "boolean",
+            "description": "Security Fact: Whitelist verification."
+          },
+          "hour_ist": {
+            "type": "integer",
+            "description": "Security Fact: Current hour in IST."
+          },
+          "payments_last_hour": {
+            "type": "integer",
+            "description": "Security Fact: Hourly velocity."
+          },
+          "approval_valid": {
+            "type": "boolean",
+            "description": "Security Fact: Approval status."
+          },
+          "scam_flag": {
+            "type": "boolean",
+            "description": "Security Fact: Threat flag."
+          },
+          "frozen": {
+            "type": "boolean",
+            "description": "Security Fact: Kill switch flag."
+          },
+          "assessment_valid": {
+            "type": "boolean",
+            "description": "Security Fact: Voice assessment validity."
+          }
+        },
+        "required": [
+          "household_id",
+          "med_ids",
+          "amount",
+          "idem_key",
+          "assessment_id"
+        ]
+      }
+    },
+    {
       "name": "check_bill_status",
       "description": "Check current due amounts and payment status for utility providers (BESCOM, BWSSB, etc.).",
       "inputSchema": {
@@ -112,29 +319,17 @@
     },
     {
       "name": "reorder_medicines",
-      "description": "Order chronic monthly medications from verified neighborhood pharmacies (e.g. Apollo Pharmacy) for the elderly parent.",
+      "description": "Order chronic monthly medications from verified neighborhood pharmacies (legacy alias).",
       "inputSchema": {
         "type": "object",
         "properties": {
           "medicine_ids": {
             "type": "array",
-            "items": { "type": "string" },
-            "description": "List of medicine IDs to refill, e.g. ['METFORMIN_500MG', 'AMLODIPINE_5MG']."
+            "items": { "type": "string" }
           },
-          "pharmacy_name": {
-            "type": "string",
-            "description": "Target pharmacy merchant name (e.g. 'Apollo Pharmacy')."
-          },
-          "household_id": {
-            "type": "string",
-            "description": "Household ID, e.g. 'HH#KAMALA_01'."
-          },
-          "approval_id": {
-            "type": "string",
-            "description": "Approval ID if total exceeds auto-limit."
-          }
-        },
-        "required": ["medicine_ids"]
+          "household_id": { "type": "string" },
+          "approval_id": { "type": "string" }
+        }
       }
     }
   ]

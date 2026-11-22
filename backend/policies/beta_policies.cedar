@@ -32,14 +32,17 @@ when {
 };
 
 // ------------------------------------------------------------------------------
-// Rule 3: R2 Auto-Pay for Errands___pay_bill
+// Rule 3: R2 Auto-Pay for Errands___pay_bill and Errands___reorder_medicine
 // Allows automated utility and errand payment under ₹2,000 to registered payees
 // during daytime hours (06:00 to 23:00 IST), within hourly rate limit (<2),
 // and with a valid unconsumed voice assessment.
 // ------------------------------------------------------------------------------
 permit (
     principal,
-    action == AgentCore::Action::"Errands___pay_bill",
+    action in [
+        AgentCore::Action::"Errands___pay_bill",
+        AgentCore::Action::"Errands___reorder_medicine"
+    ],
     resource
 )
 when {
@@ -52,12 +55,15 @@ when {
 };
 
 // ------------------------------------------------------------------------------
-// Rule 4: R3 Approved Pay for Errands___pay_bill
+// Rule 4: R3 Approved Pay for Errands___pay_bill and Errands___reorder_medicine
 // Allows payments up to ₹25,000 if guardian approval is valid & cooling-off elapsed
 // ------------------------------------------------------------------------------
 permit (
     principal,
-    action == AgentCore::Action::"Errands___pay_bill",
+    action in [
+        AgentCore::Action::"Errands___pay_bill",
+        AgentCore::Action::"Errands___reorder_medicine"
+    ],
     resource
 )
 when {
@@ -73,6 +79,14 @@ when {
 permit (
     principal,
     action in [
+        AgentCore::Action::"Errands___get_profile",
+        AgentCore::Action::"Errands___list_billers",
+        AgentCore::Action::"Errands___list_payees",
+        AgentCore::Action::"Errands___list_meds",
+        AgentCore::Action::"Errands___get_due_bills",
+        AgentCore::Action::"Errands___find_slots",
+        AgentCore::Action::"Errands___book_appointment",
+        AgentCore::Action::"Errands___set_reminder",
         AgentCore::Action::"Errands___check_bill_status",
         AgentCore::Action::"Errands___list_saved_billers",
         AgentCore::Action::"Guardian___check_approval_status",

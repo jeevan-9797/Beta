@@ -51,22 +51,31 @@ SECURITY_FIELDS = [
     "assessment_valid",
 ]
 
+def get_backup_scam_keywords() -> List[str]:
+    """Retrieve keywords from src.shield_mcp.keywords if available, else built-in fallback."""
+    try:
+        from src.shield_mcp.keywords import get_shield_keywords
+        return get_shield_keywords()
+    except (ImportError, ModuleNotFoundError):
+        return [
+            "cbi",
+            "digital arrest",
+            "parcel",
+            "customs",
+            "otp",
+            "pin",
+            "secret",
+            "police",
+            "arrest",
+            "kisi ko batana mat",
+            "kyc",
+            "apk",
+            "lottery",
+        ]
+
+
 # Backup keywords for Indian elderly coercion / fraud detection
-BACKUP_SCAM_KEYWORDS = [
-    "cbi",
-    "digital arrest",
-    "parcel",
-    "customs",
-    "otp",
-    "pin",
-    "secret",
-    "police",
-    "arrest",
-    "kisi ko batana mat",
-    "kyc",
-    "apk",
-    "lottery",
-]
+BACKUP_SCAM_KEYWORDS = get_backup_scam_keywords()
 
 
 def get_hour_ist(dt: Optional[datetime] = None) -> int:
@@ -209,7 +218,7 @@ def verify_assessment_valid(
     assessment_id: Optional[str],
     now: Optional[datetime] = None,
 ) -> Tuple[bool, Optional[Dict[str, Any]]]:
-    """True ONLY if assessment exists, is unused, age <= 300s (5 min), and risk != R4."""
+    """True ONLY if assessment exists, used is False, not expired (now <= expires_at or age <= 300s), and tier/risk != R4."""
     if not assessment_id:
         return False, None
     if now is None:
@@ -219,22 +228,30 @@ def verify_assessment_valid(
     if not assessment:
         return False, None
 
-    # Check consumed
-    if assessment.get("consumed") is True or assessment.get("status") == "CONSUMED":
+    # Check used / consumed flag
+    if assessment.get("used") is True or assessment.get("consumed") is True or assessment.get("status") == "CONSUMED":
         return False, assessment
 
-    # Check age <= 300s
-    created_at_str = assessment.get("created_at") or assessment.get("timestamp")
-    created_at = parse_timestamp(created_at_str)
-    if not created_at:
-        return False, assessment
-    age_seconds = (now - created_at).total_seconds()
-    if age_seconds < 0 or age_seconds > 300:
-        return False, assessment
+    # Check expiration via expires_at if present
+    expires_at_str = assessment.get("expires_at")
+    if expires_at_str:
+        expires_at = parse_timestamp(expires_at_str)
+        if expires_at and now > expires_at:
+            return False, assessment
+    else:
+        # Check age <= 300s
+        created_at_str = assessment.get("created_at") or assessment.get("timestamp")
+        created_at = parse_timestamp(created_at_str)
+        if not created_at:
+            return False, assessment
+        age_seconds = (now - created_at).total_seconds()
+        if age_seconds < 0 or age_seconds > 300:
+            return False, assessment
 
-    # Check risk level != R4
+    # Check tier != R4 and risk_level != R4 (Jyotir's schema)
+    tier = str(assessment.get("tier", "")).strip().upper()
     risk_level = str(assessment.get("risk_level", "")).strip().upper()
-    if risk_level == "R4":
+    if tier == "R4" or risk_level == "R4":
         return False, assessment
 
     return True, assessment
@@ -244,13 +261,17 @@ def check_scam_flag(
     assessment: Optional[Dict[str, Any]],
     text_corpus: str,
 ) -> bool:
-    """True if assessment risk is R4 OR backup keywords match note/arguments."""
-    if assessment and str(assessment.get("risk_level", "")).strip().upper() == "R4":
-        return True
+    """True if assessment tier or risk_level is R4 OR backup keywords match note/arguments."""
+    if assessment:
+        tier = str(assessment.get("tier", "")).strip().upper()
+        risk_level = str(assessment.get("risk_level", "")).strip().upper()
+        if tier == "R4" or risk_level == "R4":
+            return True
 
+    keywords = get_backup_scam_keywords()
     lower_text = text_corpus.lower()
-    for kw in BACKUP_SCAM_KEYWORDS:
-        if re.search(r"\b" + re.escape(kw) + r"\b", lower_text) or kw in lower_text:
+    for kw in keywords:
+        if re.search(r"\b" + re.escape(kw) + r"\b", lower_text):
             return True
 
     return False
@@ -276,7 +297,11 @@ def compute_security_facts(
         now = datetime.now(timezone.utc)
 
     hh_id = format_pk(household_id)
-    payee_id = arguments.get("payee_id")
+    payee_id = (
+        arguments.get("payee_id")
+        or arguments.get("pharmacy_name")
+        or ("Apollo Pharmacy" if arguments.get("med_ids") or arguments.get("medicine_ids") else None)
+    )
     bill_id = arguments.get("bill_id")
     amount = float(arguments.get("amount", 0.0))
     approval_id = arguments.get("approval_id")

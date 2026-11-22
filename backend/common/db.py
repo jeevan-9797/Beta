@@ -27,13 +27,8 @@ except ImportError:
 
 def format_pk(household_id: str) -> str:
     """Ensure PK has HH# prefix."""
-    if not household_id:
-        return settings.DEFAULT_HOUSEHOLD_ID
-    return (
-        household_id
-        if household_id.startswith("HH#")
-        else f"HH#{household_id}"
-    )
+    hh = household_id or settings.DEFAULT_HOUSEHOLD_ID
+    return hh if hh.startswith("HH#") else f"HH#{hh}"
 
 
 def _to_dynamo_friendly(item: Any) -> Any:
@@ -383,12 +378,14 @@ def get_household_config(household_id: str) -> Optional[Dict[str, Any]]:
 
 def get_assessment(household_id: str, assessment_id: str) -> Optional[Dict[str, Any]]:
     pk = format_pk(household_id)
-    sk = (
-        assessment_id
-        if assessment_id.startswith(SKPrefix.ASSESSMENT)
-        else f"{SKPrefix.ASSESSMENT}{assessment_id}"
-    )
-    return get_item(pk, sk)
+    if not assessment_id:
+        return None
+    clean_id = assessment_id
+    for prefix in ("ASSESS#", "ASSESSMENT#"):
+        if clean_id.startswith(prefix):
+            clean_id = clean_id[len(prefix):]
+            break
+    return get_item(pk, f"ASSESS#{clean_id}") or get_item(pk, f"ASSESSMENT#{clean_id}")
 
 
 def mark_assessment_consumed(
@@ -396,21 +393,24 @@ def mark_assessment_consumed(
 ) -> Optional[Dict[str, Any]]:
     from datetime import datetime, timezone
     pk = format_pk(household_id)
-    sk = (
-        assessment_id
-        if assessment_id.startswith(SKPrefix.ASSESSMENT)
-        else f"{SKPrefix.ASSESSMENT}{assessment_id}"
-    )
+    clean_id = assessment_id
+    for prefix in ("ASSESS#", "ASSESSMENT#"):
+        if clean_id.startswith(prefix):
+            clean_id = clean_id[len(prefix):]
+            break
     now_iso = datetime.now(timezone.utc).isoformat()
-    return update_item(
-        pk,
-        sk,
-        {
-            "consumed": True,
-            "status": "CONSUMED",
-            "consumed_at": now_iso,
-        },
-    )
+    updates = {
+        "used": True,
+        "consumed": True,
+        "status": "CONSUMED",
+        "consumed_at": now_iso,
+        "used_at": now_iso,
+    }
+    # Try updating ASSESS# first, then fallback to ASSESSMENT#
+    updated = update_item(pk, f"ASSESS#{clean_id}", updates)
+    if not updated:
+        updated = update_item(pk, f"ASSESSMENT#{clean_id}", updates)
+    return updated
 
 
 def get_payment(household_id: str, idem_key: str) -> Optional[Dict[str, Any]]:

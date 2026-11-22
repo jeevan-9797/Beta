@@ -1,4 +1,4 @@
-"""Create DynamoDB Single-Table schema for BETA (BETA_Main).
+"""Create DynamoDB Single-Table schema for BETA (BETA_Household).
 
 Creates table with:
 - PK: String (Partition Key)

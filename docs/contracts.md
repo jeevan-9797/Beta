@@ -57,9 +57,9 @@ BETA bridges elderly parents (e.g., Kamala, 74, Dharwad) and adult children / gu
 
 ## 2. DynamoDB Single-Table Schema (`BETA_Main`)
 
-- **Table Name:** `BETA_Main`
+- **Table Name:** `BETA_Household` (configurable via `DYNAMODB_TABLE`)
 - **Billing Mode:** `PAY_PER_REQUEST`
-- **Partition Key (PK):** `HH#<household_id>` (String, e.g. `HH#KAMALA_01`)
+- **Partition Key (PK):** `HH#<household_id>` (String, e.g. `HH#kamala`)
 - **Sort Key (SK):** Prefixed String
 - **TTL Attribute:** `ttl` (Unix epoch timestamp in seconds)
 
@@ -68,15 +68,16 @@ BETA bridges elderly parents (e.g., Kamala, 74, Dharwad) and adult children / gu
 | Entity | SK Pattern | Key Attributes | Description |
 |---|---|---|---|
 | **Member** | `MEMBER#<member_id>` | `name`, `role`, `age`, `location`, `phone`, `relation` | Household profile (Parent vs Guardian). |
-| **Rules** | `RULE#FINANCIAL` | `auto_limit`, `max_with_approval`, `frozen`, `cooling_off_seconds`, `night_start`, `night_end`, `max_payments_per_hour` | Security policies and spending limits. |
+| **Rules** | `RULE#CONFIG`, `RULE#FINANCIAL` | `auto_limit`, `max_with_approval`, `frozen`, `cooling_off_seconds`, `night_start`, `night_end`, `max_payments_per_hour` | Security policies and spending limits. |
 | **Biller** | `BILLER#<biller_id>` | `name`, `utility_type`, `bill_id`, `amount`, `due_date`, `account_no`, `status` | Registered utility providers (BESCOM, BWSSB). |
 | **Payee** | `PAYEE#<payee_id>` | `name`, `category`, `upi_id`, `verified`, `trusted` | Whitelisted merchants (e.g. Apollo Pharmacy). |
 | **Medicine** | `MED#<med_id>` | `name`, `dosage`, `schedule`, `refill_qty`, `unit_price`, `reorder_total`, `prescribed_by` | Chronic prescription catalog. |
 | **Approval** | `APPROVAL#<approval_id>` | `approval_id`, `errand_type`, `payee_name`, `amount`, `status`, `requested_at`, `cooling_off_until`, `expires_at`, `guardian_response` | Guardian authorization transaction state. |
-| **Assessment** | `ASSESSMENT#<session_id>` | `session_id`, `sentiment`, `confusion_score`, `audio_clarity`, `timestamp` | Voice interaction telemetry. |
+| **Assessment** | `ASSESS#<session_id>` | `risk_level`, `tier`, `signals`, `used`, `created_at`, `expires_at` | Voice interaction telemetry and coercion screening. |
 | **Audit** | `AUDIT#<iso_timestamp>` | `action`, `actor`, `details`, `risk_score`, `status`, `timestamp`, `ttl` | Immutable audit trail with 90-day TTL. |
-| **Receipt** | `RECEIPT#<tx_id>` | `receipt_id`, `biller_id`, `amount`, `bill_id`, `paid_at`, `status` | Completed transaction receipt. |
+| **Receipt** | `RECEIPT#<tx_id>` | `receipt_id`, `biller_id`, `amount`, `bill_id`, `paid_at`, `provider`, `status` | Completed transaction receipt (MOCK_BBPS, MOCK_PHARMACY, GOOGLE_CALENDAR). |
 | **Payment** | `PAYMENT#<idem_key>` | `tx_id`, `payee_name`, `amount`, `status`, `timestamp`, `approval_id` | Idempotency record for payment deduplication. |
+| **Reminder** | `REMINDER#<reminder_id>` | `reminder_id`, `title`, `time_iso`, `calendar_event_id`, `status` | Scheduled reminders synchronized with Google Calendar. |
 
 ---
 

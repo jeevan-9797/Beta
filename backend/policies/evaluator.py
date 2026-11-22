@@ -124,7 +124,17 @@ def evaluate_policy(
     payments_last_hour = int(input_data.get("payments_last_hour", 0))
     approval_valid = bool(input_data.get("approval_valid", False))
 
-    # Rule 3: R2 Auto-Pay
+    # Check baseline read-only / R0-R1 tools
+    r0_r1_tools = [
+        "get_profile", "list_billers", "list_payees", "list_meds",
+        "get_due_bills", "find_slots", "book_appointment", "set_reminder",
+        "check_bill_status", "list_saved_billers", "check_approval_status",
+        "get_household_rules", "verify_payee_trust", "evaluate_cooling_off",
+    ]
+    if any(t in action_name for t in r0_r1_tools):
+        return True, "ALLOW", {"reason": "permit: baseline read-only tool"}
+
+    # Rule 3: R2 Auto-Pay (pay_bill and reorder_medicine)
     if (
         amount <= 2000
         and payee_known
@@ -134,7 +144,7 @@ def evaluate_policy(
     ):
         return True, "ALLOW", {"reason": "permit: R2 auto-pay"}
 
-    # Rule 4: R3 Approved Pay
+    # Rule 4: R3 Approved Pay (pay_bill and reorder_medicine)
     if approval_valid and assessment_valid and amount <= 25000:
         return True, "ALLOW", {"reason": "permit: R3 approved-pay"}
 

@@ -27,7 +27,43 @@ def handle_tool_call(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any
     if "___" in clean_name:
         clean_name = clean_name.split("___")[-1]
 
-    if clean_name == "pay_bill":
+    if clean_name == "get_profile":
+        return tools.get_profile(household_id=arguments.get("household_id"))
+
+    elif clean_name == "list_billers":
+        return tools.list_billers(household_id=arguments.get("household_id"))
+
+    elif clean_name == "list_payees":
+        return tools.list_payees(household_id=arguments.get("household_id"))
+
+    elif clean_name == "list_meds":
+        return tools.list_meds(household_id=arguments.get("household_id"))
+
+    elif clean_name == "get_due_bills":
+        return tools.get_due_bills(household_id=arguments.get("household_id"))
+
+    elif clean_name == "find_slots":
+        return tools.find_slots(
+            specialty=arguments.get("specialty"),
+            date=arguments.get("date"),
+        )
+
+    elif clean_name == "book_appointment":
+        return tools.book_appointment(
+            household_id=arguments.get("household_id"),
+            doctor_name=arguments.get("doctor_name", "Dr. Rao"),
+            slot_iso=arguments.get("slot_iso", ""),
+            patient_name=arguments.get("patient_name", "Kamala"),
+        )
+
+    elif clean_name == "set_reminder":
+        return tools.set_reminder(
+            household_id=arguments.get("household_id"),
+            title=arguments.get("title", ""),
+            time_iso=arguments.get("time_iso", ""),
+        )
+
+    elif clean_name == "pay_bill":
         return tools.pay_bill(
             household_id=arguments.get("household_id"),
             bill_id=arguments.get("bill_id", ""),
@@ -38,17 +74,25 @@ def handle_tool_call(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any
             approval_id=arguments.get("approval_id"),
             note=arguments.get("note"),
         )
+
+    elif clean_name in ("reorder_medicine", "reorder_medicines"):
+        med_ids = arguments.get("med_ids") or arguments.get("medicine_ids") or []
+        return tools.reorder_medicine(
+            household_id=arguments.get("household_id"),
+            med_ids=med_ids,
+            amount=float(arguments.get("amount", 0)),
+            idem_key=arguments.get("idem_key", ""),
+            assessment_id=arguments.get("assessment_id", ""),
+            approval_id=arguments.get("approval_id"),
+            note=arguments.get("note"),
+            pharmacy_name=arguments.get("pharmacy_name", "Apollo Pharmacy"),
+        )
+
+    # Legacy aliases
     elif clean_name == "pay_utility_bill":
         return tools.pay_utility_bill(
             biller_id=arguments.get("biller_id", ""),
             amount=float(arguments.get("amount", 0)),
-            household_id=arguments.get("household_id"),
-            approval_id=arguments.get("approval_id"),
-        )
-    elif clean_name == "reorder_medicines":
-        return tools.reorder_medicines(
-            medicine_ids=arguments.get("medicine_ids", []),
-            pharmacy_name=arguments.get("pharmacy_name", "Apollo Pharmacy"),
             household_id=arguments.get("household_id"),
             approval_id=arguments.get("approval_id"),
         )

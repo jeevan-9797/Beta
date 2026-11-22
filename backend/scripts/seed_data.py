@@ -11,7 +11,7 @@ Seeds:
 - Meds: Metformin 500mg, Amlodipine 5mg (reorder total 3800)
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import logging
 import sys
 from pathlib import Path
@@ -44,7 +44,7 @@ from backend.common.models import (
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
-HOUSEHOLD_ID = "HH#KAMALA_01"
+HOUSEHOLD_ID = "kamala"
 
 
 def get_seed_payload(household_id: str = HOUSEHOLD_ID) -> List[Dict[str, Any]]:
@@ -156,19 +156,25 @@ def get_seed_payload(household_id: str = HOUSEHOLD_ID) -> List[Dict[str, Any]]:
         prescribed_by="Dr. Kulkarni (Dharwad Clinic)",
     ).to_item(hh_id)
 
-    # 6. Active Voice Telemetry Assessment (valid for 5 mins)
+    # 6. Active Voice Telemetry Assessment (Jyotir's schema, valid for 5 mins)
     now_iso = datetime.now(timezone.utc).isoformat()
+    expires_iso = (datetime.now(timezone.utc) + timedelta(seconds=300)).isoformat()
     init_assessment = {
         "PK": hh_id,
-        "SK": f"{SKPrefix.ASSESSMENT}ASM_KAMALA_INIT",
+        "SK": "ASSESS#ASM_KAMALA_INIT",
         "assessment_id": "ASM_KAMALA_INIT",
         "risk_level": "R1",
+        "tier": "R1",
+        "signals": {
+            "sentiment": "CALM",
+            "confusion_score": 0.05,
+            "audio_clarity": 0.95,
+        },
+        "used": False,
         "consumed": False,
         "status": "ACTIVE",
-        "sentiment": "CALM",
-        "confusion_score": 0.05,
-        "audio_clarity": 0.95,
         "created_at": now_iso,
+        "expires_at": expires_iso,
         "timestamp": now_iso,
         "entity_type": "ASSESSMENT",
     }

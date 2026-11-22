@@ -15,10 +15,12 @@ class SKPrefix:
     MED = "MED#"
     RULE = "RULE#"
     APPROVAL = "APPROVAL#"
-    ASSESSMENT = "ASSESSMENT#"
+    ASSESS = "ASSESS#"
+    ASSESSMENT = "ASSESS#"
     AUDIT = "AUDIT#"
     RECEIPT = "RECEIPT#"
     PAYMENT = "PAYMENT#"
+    REMINDER = "REMINDER#"
 
 
 class MemberRole(str, Enum):
