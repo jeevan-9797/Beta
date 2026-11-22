@@ -1,0 +1,221 @@
+{
+  "agent_name": "BETA",
+  "version": "1.1.0",
+  "region": "ap-south-1",
+  "description": "Voice AI companion for Indian seniors using ElevenLabs Agents and AWS Bedrock AgentCore Gateway",
+  "conversation_config": {
+    "language": "hi-IN",
+    "turn_detection": {
+      "type": "server_vad",
+      "threshold": 0.5,
+      "prefix_padding_ms": 300,
+      "silence_duration_ms": 500
+    },
+    "interruption_mode": {
+      "enabled": true,
+      "allow_interruptions": true,
+      "mode": "adaptive_voice_priority",
+      "latency_tolerance_ms": 250,
+      "behavior": "natural_pause_on_user_speech",
+      "critical_warning_protection": {
+        "shield_explanation_protected": true,
+        "description": "If BETA is delivering an active scam warning or reciting the 1930 Cyber Helpline, minimize accidental interruptions from background room noise."
+      }
+    }
+  },
+  "namespaces": ["shield-mcp", "errands-mcp", "guardian-mcp"],
+  "tools": [
+    {
+      "name": "shield.assess_risk",
+      "namespace": "shield-mcp",
+      "description": "MANDATORY PRE-REQUISITE FOR ANY PAYMENT OR ACTION. Evaluates user intent, conversation snippet, and amount against Scam Shield fraud models and DynamoDB single-table schema. Returns an assessment_id, risk_level (LOW, MEDIUM, HIGH), and tier (R0, R1, R2, R3, R4). You MUST call this before errands.pay_bill.",
+      "execution_mode": "immediate",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "household_id": {
+            "type": "string",
+            "description": "Unique identifier for the senior citizen's household (e.g. 'hh_delhi_9921', 'hh_blr_4012')."
+          },
+          "snippet": {
+            "type": "string",
+            "description": "The exact transcript of the senior's voice request or suspicious call dialogue."
+          },
+          "intent": {
+            "type": "string",
+            "description": "Identified conversation intent (e.g. 'pay_utility_bill', 'digital_arrest', 'electricity_disconnection', 'reorder_medicine')."
+          },
+          "amount": {
+            "type": "number",
+            "description": "The monetary amount in INR (₹) requested to be paid or transferred, or null if non-monetary."
+          }
+        },
+        "required": ["household_id", "snippet", "intent"]
+      }
+    },
+    {
+      "name": "shield.explain_scam",
+      "namespace": "shield-mcp",
+      "description": "Generates a comforting, elder-friendly spoken Hinglish de-escalation explanation and official Cyber Crime Helpline (1930) details whenever a scam pattern is detected (Risk Tier R4). Never lecture the senior; calm and reassure them.",
+      "execution_mode": "immediate",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "scam_type": {
+            "type": "string",
+            "description": "Identified scam category: 'digital_arrest', 'electricity_disconnection', 'customs_narcotics', 'emergency_relative', 'kyc_suspension', 'fake_stock_investment'."
+          },
+          "language": {
+            "type": "string",
+            "description": "Target response language. Default is 'hi-en' (Hinglish).",
+            "default": "hi-en"
+          },
+          "household_id": {
+            "type": "string",
+            "description": "Household identifier."
+          }
+        },
+        "required": ["scam_type"]
+      }
+    },
+    {
+      "name": "errands.pay_bill",
+      "namespace": "errands-mcp",
+      "description": "Executes a verified bill payment. STRICT REQUIREMENTS: 1. You CANNOT invoke this tool without passing a valid assessment_id from shield.assess_risk. 2. You MUST read back payee and amount to elder first. 3. If tier is R3 (> ₹2,000) or R4 (Scam), payment is gated/rejected.",
+      "execution_mode": "post_tool_speech",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "assessment_id": {
+            "type": "string",
+            "description": "The security token returned by shield.assess_risk confirming this transaction is cleared for execution."
+          },
+          "household_id": {
+            "type": "string",
+            "description": "Household identifier."
+          },
+          "biller_id": {
+            "type": "string",
+            "description": "Registered biller name or identifier (e.g. 'BESCOM', 'BSES_RAJDHANI', 'TATA_POWER', 'APOLLO_PHARMACY', 'BHARAT_GAS')."
+          },
+          "consumer_number": {
+            "type": "string",
+            "description": "Consumer account number, meter ID, or LPG consumer ID."
+          },
+          "amount": {
+            "type": "number",
+            "description": "Exact transaction amount in INR (₹)."
+          }
+        },
+        "required": ["assessment_id", "household_id", "biller_id", "consumer_number", "amount"]
+      }
+    },
+    {
+      "name": "guardian.request_approval",
+      "namespace": "guardian-mcp",
+      "description": "Dispatches an interactive WhatsApp approval request to the family guardian when a transaction is Tier R3 (> ₹2,000 or new unverified payee).",
+      "execution_mode": "immediate",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "household_id": {
+            "type": "string",
+            "description": "Household identifier."
+          },
+          "action_type": {
+            "type": "string",
+            "description": "Action requiring approval ('utility_payment_above_limit', 'new_payee_transfer')."
+          },
+          "payee": {
+            "type": "string",
+            "description": "Requested payee name."
+          },
+          "amount": {
+            "type": "number",
+            "description": "Requested amount in INR (₹)."
+          },
+          "tier": {
+            "type": "string",
+            "enum": ["R3"],
+            "description": "Risk Tier R3."
+          },
+          "reason": {
+            "type": "string",
+            "description": "Reason for guardian escalation."
+          }
+        },
+        "required": ["household_id", "action_type", "payee", "amount", "tier"]
+      }
+    },
+    {
+      "name": "guardian.notify_alert",
+      "namespace": "guardian-mcp",
+      "description": "Dispatches an urgent emergency alert to the family guardian's WhatsApp/SMS when an R4 scam is detected and blocked by BETA.",
+      "execution_mode": "immediate",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "household_id": {
+            "type": "string",
+            "description": "Household identifier."
+          },
+          "alert_type": {
+            "type": "string",
+            "description": "Alert category (e.g. 'SCAM_ATTEMPT_DETECTED', 'DIGITAL_ARREST_BLOCKED')."
+          },
+          "guardian_message": {
+            "type": "string",
+            "description": "Detailed alert message for the guardian."
+          },
+          "urgency_level": {
+            "type": "string",
+            "enum": ["HIGH", "CRITICAL"],
+            "description": "Priority of the alert."
+          }
+        },
+        "required": ["household_id", "alert_type", "guardian_message", "urgency_level"]
+      }
+    },
+    {
+      "name": "generate_receipt",
+      "namespace": "errands-mcp",
+      "description": "Calls AWS Bedrock Plain-Language Receipt Generator in ap-south-1 to produce a 1-sentence plain-language reason ('why BETA did this') for both spoken audio readout and the guardian WhatsApp summary.",
+      "execution_mode": "post_tool_speech",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "household_id": {
+            "type": "string",
+            "description": "Household identifier."
+          },
+          "action_type": {
+            "type": "string",
+            "description": "Action executed: 'utility_payment', 'medicine_reorder', 'appointment_booked', 'scam_blocked'."
+          },
+          "payee": {
+            "type": "string",
+            "description": "Recipient or merchant name (e.g. 'BESCOM', 'Apollo Pharmacy', 'Fraudulent Caller Blocked')."
+          },
+          "amount": {
+            "type": "number",
+            "description": "Amount in INR (₹), or null."
+          },
+          "tier": {
+            "type": "string",
+            "enum": ["R0", "R1", "R2", "R3", "R4"],
+            "description": "Risk tier assessed during transaction."
+          },
+          "decision": {
+            "type": "string",
+            "description": "Outcome status: 'EXECUTED', 'BLOCKED', 'SCHEDULED'."
+          },
+          "reason_facts": {
+            "type": "object",
+            "description": "Key metadata dictionary."
+          }
+        },
+        "required": ["household_id", "action_type", "payee", "tier", "decision"]
+      }
+    }
+  ]
+}
