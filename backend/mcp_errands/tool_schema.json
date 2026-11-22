@@ -1,0 +1,90 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "BETA Errands MCP Server Tools",
+  "description": "Errand tools for elderly care: paying bills, reordering medicines, and checking utilities in India.",
+  "tools": [
+    {
+      "name": "pay_utility_bill",
+      "description": "Pay an electricity, water, gas, or broadband bill for the elderly household through approved billers (e.g. BESCOM, BWSSB).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "biller_id": {
+            "type": "string",
+            "description": "Unique biller identifier, e.g. 'BESCOM' for electricity or 'BWSSB' for water."
+          },
+          "amount": {
+            "type": "number",
+            "description": "Bill amount in INR to pay."
+          },
+          "household_id": {
+            "type": "string",
+            "description": "Household ID, e.g. 'HH#KAMALA_01'. Defaults to configured household."
+          },
+          "approval_id": {
+            "type": "string",
+            "description": "Guardian approval identifier if amount exceeds auto-limit."
+          }
+        },
+        "required": ["biller_id", "amount"]
+      }
+    },
+    {
+      "name": "reorder_medicines",
+      "description": "Order chronic monthly medications from verified neighborhood pharmacies (e.g. Apollo Pharmacy) for the elderly parent.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "medicine_ids": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "List of medicine IDs to refill, e.g. ['METFORMIN_500MG', 'AMLODIPINE_5MG']."
+          },
+          "pharmacy_name": {
+            "type": "string",
+            "description": "Target pharmacy merchant name (e.g. 'Apollo Pharmacy')."
+          },
+          "household_id": {
+            "type": "string",
+            "description": "Household ID, e.g. 'HH#KAMALA_01'."
+          },
+          "approval_id": {
+            "type": "string",
+            "description": "Approval ID if total exceeds auto-limit."
+          }
+        },
+        "required": ["medicine_ids"]
+      }
+    },
+    {
+      "name": "check_bill_status",
+      "description": "Check current due amounts and payment status for utility providers (BESCOM, BWSSB, etc.).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "biller_id": {
+            "type": "string",
+            "description": "Optional biller ID (e.g. 'BESCOM') to query single provider. If omitted, returns all pending bills."
+          },
+          "household_id": {
+            "type": "string",
+            "description": "Household ID."
+          }
+        }
+      }
+    },
+    {
+      "name": "list_saved_billers",
+      "description": "Retrieve the list of registered utility billers, accounts, and saved pharmacies for the household.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "household_id": {
+            "type": "string",
+            "description": "Household ID."
+          }
+        }
+      }
+    }
+  ]
+}

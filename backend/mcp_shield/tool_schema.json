@@ -1,0 +1,83 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "BETA Shield MCP Server Tools",
+  "description": "Protective shield tools: detecting scam patterns, verifying payee safety, evaluating cooling-off timers, and emergency lockouts.",
+  "tools": [
+    {
+      "name": "screen_scam_risk",
+      "description": "Screen voice utterances, SMS quotes, or instructions for senior citizen extortion or fraud (e.g. digital arrest, fake police verification, electricity disconnection threats).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "User speech transcript or incoming message text."
+          },
+          "household_id": {
+            "type": "string",
+            "description": "Household ID."
+          }
+        },
+        "required": ["text"]
+      }
+    },
+    {
+      "name": "verify_payee_trust",
+      "description": "Check if a requested merchant or UPI ID is on the household's pre-approved whitelist.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "payee_name": {
+            "type": "string",
+            "description": "Merchant or payee identifier."
+          },
+          "upi_id": {
+            "type": "string",
+            "description": "Optional UPI VPA handle (e.g. apollopharmacy@icici)."
+          },
+          "household_id": {
+            "type": "string",
+            "description": "Household ID."
+          }
+        },
+        "required": ["payee_name"]
+      }
+    },
+    {
+      "name": "evaluate_cooling_off",
+      "description": "Check if an approval request is currently undergoing cooling-off delay and compute remaining seconds.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "approval_id": {
+            "type": "string",
+            "description": "Approval request ID."
+          },
+          "household_id": {
+            "type": "string",
+            "description": "Household ID."
+          }
+        },
+        "required": ["approval_id"]
+      }
+    },
+    {
+      "name": "trigger_emergency_freeze",
+      "description": "Emergency lockdown halting all financial transactions immediately for the household.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "description": "Reason for emergency freeze."
+          },
+          "household_id": {
+            "type": "string",
+            "description": "Household ID."
+          }
+        },
+        "required": ["reason"]
+      }
+    }
+  ]
+}
