@@ -360,7 +360,77 @@ def batch_write_items(items: List[Dict[str, Any]]) -> None:
 # Entity-specific convenience queries
 def get_household_rules(household_id: str) -> Optional[Dict[str, Any]]:
     pk = format_pk(household_id)
-    return get_item(pk, f"{SKPrefix.RULE}FINANCIAL")
+    # Check RULE#CONFIG first, fallback to RULE#FINANCIAL
+    config = get_item(pk, f"{SKPrefix.RULE}CONFIG")
+    financial = get_item(pk, f"{SKPrefix.RULE}FINANCIAL")
+    if config and financial:
+        merged = dict(financial)
+        merged.update(config)
+        return merged
+    return config or financial
+
+
+def get_household_config(household_id: str) -> Optional[Dict[str, Any]]:
+    pk = format_pk(household_id)
+    config = get_item(pk, f"{SKPrefix.RULE}CONFIG") or {}
+    financial = get_item(pk, f"{SKPrefix.RULE}FINANCIAL") or {}
+    merged = dict(financial)
+    merged.update(config)
+    if financial.get("frozen") is True or config.get("frozen") is True:
+        merged["frozen"] = True
+    return merged
+
+
+def get_assessment(household_id: str, assessment_id: str) -> Optional[Dict[str, Any]]:
+    pk = format_pk(household_id)
+    sk = (
+        assessment_id
+        if assessment_id.startswith(SKPrefix.ASSESSMENT)
+        else f"{SKPrefix.ASSESSMENT}{assessment_id}"
+    )
+    return get_item(pk, sk)
+
+
+def mark_assessment_consumed(
+    household_id: str, assessment_id: str
+) -> Optional[Dict[str, Any]]:
+    from datetime import datetime, timezone
+    pk = format_pk(household_id)
+    sk = (
+        assessment_id
+        if assessment_id.startswith(SKPrefix.ASSESSMENT)
+        else f"{SKPrefix.ASSESSMENT}{assessment_id}"
+    )
+    now_iso = datetime.now(timezone.utc).isoformat()
+    return update_item(
+        pk,
+        sk,
+        {
+            "consumed": True,
+            "status": "CONSUMED",
+            "consumed_at": now_iso,
+        },
+    )
+
+
+def get_payment(household_id: str, idem_key: str) -> Optional[Dict[str, Any]]:
+    pk = format_pk(household_id)
+    sk = (
+        idem_key
+        if idem_key.startswith(SKPrefix.PAYMENT)
+        else f"{SKPrefix.PAYMENT}{idem_key}"
+    )
+    return get_item(pk, sk)
+
+
+def get_receipt(household_id: str, receipt_id: str) -> Optional[Dict[str, Any]]:
+    pk = format_pk(household_id)
+    sk = (
+        receipt_id
+        if receipt_id.startswith(SKPrefix.RECEIPT)
+        else f"{SKPrefix.RECEIPT}{receipt_id}"
+    )
+    return get_item(pk, sk)
 
 
 def get_household_members(household_id: str) -> List[Dict[str, Any]]:

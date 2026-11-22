@@ -85,6 +85,21 @@ def get_seed_payload(household_id: str = HOUSEHOLD_ID) -> List[Dict[str, Any]]:
         max_payments_per_hour=2,
     ).to_item(hh_id)
 
+    # 2b. Core Config Rule (RULE#CONFIG)
+    config_rule = {
+        "PK": hh_id,
+        "SK": f"{SKPrefix.RULE}CONFIG",
+        "frozen": False,
+        "auto_limit": 2000.0,
+        "max_with_approval": 25000.0,
+        "cooling_off_seconds": 20,
+        "night_start": 23,
+        "night_end": 6,
+        "max_payments_per_hour": 2,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "entity_type": "RULE",
+    }
+
     # 3. Saved Utility Billers
     bescom = Biller(
         biller_id="BESCOM",
@@ -141,8 +156,24 @@ def get_seed_payload(household_id: str = HOUSEHOLD_ID) -> List[Dict[str, Any]]:
         prescribed_by="Dr. Kulkarni (Dharwad Clinic)",
     ).to_item(hh_id)
 
-    # 6. Initial Audit Log Entry
+    # 6. Active Voice Telemetry Assessment (valid for 5 mins)
     now_iso = datetime.now(timezone.utc).isoformat()
+    init_assessment = {
+        "PK": hh_id,
+        "SK": f"{SKPrefix.ASSESSMENT}ASM_KAMALA_INIT",
+        "assessment_id": "ASM_KAMALA_INIT",
+        "risk_level": "R1",
+        "consumed": False,
+        "status": "ACTIVE",
+        "sentiment": "CALM",
+        "confusion_score": 0.05,
+        "audio_clarity": 0.95,
+        "created_at": now_iso,
+        "timestamp": now_iso,
+        "entity_type": "ASSESSMENT",
+    }
+
+    # 7. Initial Audit Log Entry
     init_audit = {
         "PK": hh_id,
         "SK": f"{SKPrefix.AUDIT}{now_iso}",
@@ -168,11 +199,13 @@ def get_seed_payload(household_id: str = HOUSEHOLD_ID) -> List[Dict[str, Any]]:
         parent,
         guardian,
         rules,
+        config_rule,
         bescom,
         bwssb,
         apollo,
         metformin,
         amlodipine,
+        init_assessment,
         init_audit,
     ]
 

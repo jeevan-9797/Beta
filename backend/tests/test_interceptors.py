@@ -15,8 +15,21 @@ class TestInterceptors(unittest.TestCase):
     def setUp(self):
         self.mock_db = reset_mock_db()
         self.hh_id = "HH#KAMALA_01"
+        from datetime import datetime, timezone
+        now_iso = datetime.now(timezone.utc).isoformat()
 
         # Seed standard test rules
+        put_item({
+            "PK": self.hh_id,
+            "SK": f"{SKPrefix.RULE}CONFIG",
+            "auto_limit": 2000.0,
+            "max_with_approval": 25000.0,
+            "frozen": False,
+            "cooling_off_seconds": 20,
+            "night_start": 23,
+            "night_end": 6,
+            "max_payments_per_hour": 2,
+        })
         put_item({
             "PK": self.hh_id,
             "SK": f"{SKPrefix.RULE}FINANCIAL",
@@ -35,6 +48,15 @@ class TestInterceptors(unittest.TestCase):
             "name": "BESCOM Electricity",
             "biller_id": "BESCOM",
             "amount": 1240.0,
+        })
+        # Seed active valid assessment
+        put_item({
+            "PK": self.hh_id,
+            "SK": f"{SKPrefix.ASSESSMENT}ASM_TEST",
+            "assessment_id": "ASM_TEST",
+            "risk_level": "R1",
+            "consumed": False,
+            "created_at": now_iso,
         })
 
     def test_detect_scam_keywords(self):
@@ -60,7 +82,7 @@ class TestInterceptors(unittest.TestCase):
         allowed, context, reason = interceptor.intercept({
             "prompt": "Pay BESCOM bill",
             "tool_name": "pay_utility_bill",
-            "tool_args": {"biller_id": "BESCOM", "amount": 1240.0},
+            "tool_args": {"biller_id": "BESCOM", "amount": 1240.0, "assessment_id": "ASM_TEST"},
         })
         # If running outside night hours, this should be allowed
         facts = context["security_facts"]
@@ -72,6 +94,12 @@ class TestInterceptors(unittest.TestCase):
         # Freeze household
         put_item({
             "PK": self.hh_id,
+            "SK": f"{SKPrefix.RULE}CONFIG",
+            "frozen": True,
+            "auto_limit": 2000.0,
+        })
+        put_item({
+            "PK": self.hh_id,
             "SK": f"{SKPrefix.RULE}FINANCIAL",
             "frozen": True,
             "auto_limit": 2000.0,
@@ -80,7 +108,7 @@ class TestInterceptors(unittest.TestCase):
         allowed, context, reason = interceptor.intercept({
             "prompt": "Pay electricity bill",
             "tool_name": "pay_utility_bill",
-            "tool_args": {"biller_id": "BESCOM", "amount": 500.0},
+            "tool_args": {"biller_id": "BESCOM", "amount": 500.0, "assessment_id": "ASM_TEST"},
         })
         self.assertFalse(allowed)
         self.assertIn("frozen", reason.lower())

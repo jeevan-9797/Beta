@@ -189,7 +189,7 @@ class Medicine:
 
 @dataclass
 class SecurityFacts:
-    """The 6 injected security facts evaluated by Bedrock AgentCore Interceptors."""
+    """The 7 injected security facts evaluated by Bedrock AgentCore Interceptors."""
 
     payee_known: bool
     hour_ist: int  # 0 to 23
@@ -197,6 +197,7 @@ class SecurityFacts:
     approval_valid: bool
     scam_flag: bool
     frozen: bool
+    assessment_valid: bool = True
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)

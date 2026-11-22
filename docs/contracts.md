@@ -80,18 +80,19 @@ BETA bridges elderly parents (e.g., Kamala, 74, Dharwad) and adult children / gu
 
 ---
 
-## 3. The 6 Injected Security Fact Fields
+## 3. The 7 Injected Security Fact Fields
 
-Evaluated by the Bedrock AgentCore **Request Interceptor** before any sensitive tool call:
+Evaluated by the Bedrock AgentCore **Request Interceptor** before any sensitive tool call (strip-then-overwrite security rule):
 
 | Field | Type | Description | Source / Computation |
 |---|---|---|---|
-| `payee_known` | `boolean` | `true` if payee or utility biller is present on the household whitelist (`BILLER#` or `PAYEE#`). | Checked against `BILLER#<id>` and `PAYEE#<id>`. |
-| `hour_ist` | `integer` | Current hour in Indian Standard Time (UTC+5:30), 0 through 23. | `(UTC_now + 5h30m).hour`. Used for night curfew (23:00 to 06:00). |
+| `payee_known` | `boolean` | `true` if `payee_id` or `bill_id`'s biller exists under `PAYEE#` or `BILLER#`. | Whitelist verification against DynamoDB single-table. |
+| `hour_ist` | `integer` | Current hour in `Asia/Kolkata` (0 through 23). | Current time converted to IST (UTC+5:30). Curfew: 23:00 to 06:00. |
 | `payments_last_hour`| `integer` | Count of completed payments executed within the past 60 minutes. | Count of `PAYMENT#*` with `timestamp >= now - 1hr` and `status == SUCCESS`. |
-| `approval_valid` | `boolean` | `true` if an approval exists in status `APPROVED`, not expired, and past cooling-off period. | Checked against `APPROVAL#<id>`. |
-| `scam_flag` | `boolean` | `true` if the utterance contains high-risk Indian senior citizen extortion keywords. | Regex scan for "digital arrest", "police verification", "KYC suspended", "urgent APK download", etc. |
-| `frozen` | `boolean` | `true` if household transactions are administratively locked. | Read from `RULE#FINANCIAL` attribute `frozen`. |
+| `approval_valid` | `boolean` | `true` ONLY if `approval_id` exists in `APPROVAL#`, status is `APPROVED`, not cancelled/expired, amount/payee match, and cooling-off period has passed. | Validated against `APPROVAL#<approval_id>`. |
+| `scam_flag` | `boolean` | `true` if `ASSESSMENT#` risk level is `R4` OR if `note`/arguments match backup keywords (`cbi`, `digital arrest`, `parcel`, `customs`, `otp`, `pin`, `secret`, `police`, `arrest`, `kisi ko batana mat`). | Heuristic extortion and coercion detection. |
+| `frozen` | `boolean` | `true` if household emergency freeze is engaged in `RULE#CONFIG`. | Read from `RULE#CONFIG` attribute `frozen`. |
+| `assessment_valid` | `boolean` | `true` ONLY if `assessment_id` exists in `ASSESSMENT#`, is unused (`consumed != true`), age <= 300s (5 min), and risk level != `R4`. | Voice telemetry validation. |
 
 ---
 
@@ -100,8 +101,50 @@ Evaluated by the Bedrock AgentCore **Request Interceptor** before any sensitive 
 **Endpoint/Server ID:** `errands-mcp`  
 **Description:** Errand execution tools for utility bills and pharmacy reorders.
 
-### Tool 1: `pay_utility_bill`
-Executes payment for a verified utility biller (e.g. BESCOM, BWSSB).
+### Tool 1: `pay_bill` (AWS AgentCore Gateway Primary Target)
+Executes payment for an electricity, water, gas, or broadband bill for the elderly household through approved billers/payees via BBPS gateway.
+
+- **Model-Supplied Parameters:**
+  - `household_id` (string): Household ID, e.g. `HH#KAMALA_01`
+  - `bill_id` (string): Unique bill identifier, e.g. `BILL_BESCOM_NOV`
+  - `payee_id` (string): Payee/Biller ID, e.g. `BESCOM`
+  - `amount` (number): Payment amount in INR (e.g. `1240.0`)
+  - `idem_key` (string): Idempotency key preventing duplicate charges
+  - `assessment_id` (string): Valid telemetry voice assessment ID
+  - `approval_id` (string, optional): Guardian approval ID if amount > auto-limit
+  - `note` (string, optional): Contextual note from parent speech
+
+- **Interceptor-Injected Security Facts (in `context.input` for Cedar):**
+  - `payee_known`, `hour_ist`, `payments_last_hour`, `approval_valid`, `scam_flag`, `frozen`, `assessment_valid`
+
+- **Execution Semantics:**
+  - **Strict Idempotency:** Conditional check on `PAYMENT#<idem_key>`. If it exists, returns existing receipt without re-charging.
+  - **Single-Use Assessment:** Marks `assessment_id` as `consumed: true`.
+  - **Receipt Generation:** Writes `RECEIPT#<tx_id>` labelled `provider: "MOCK_BBPS"`.
+
+- **Output Schema:**
+  ```json
+  {
+    "success": true,
+    "status": "SUCCESS",
+    "idempotent_replay": false,
+    "idem_key": "IDEM_BESCOM_NOV_1240",
+    "tx_id": "TX_BBPS_7A890EF12B",
+    "bill_id": "BILL_BESCOM_NOV",
+    "payee_id": "BESCOM",
+    "amount": 1240.0,
+    "provider": "MOCK_BBPS",
+    "receipt": {
+      "receipt_id": "TX_BBPS_7A890EF12B",
+      "provider": "MOCK_BBPS",
+      "status": "PAID"
+    },
+    "message": "Successfully paid ₹1,240.00 to BESCOM via MOCK_BBPS. Receipt #TX_BBPS_7A890EF12B."
+  }
+  ```
+
+### Tool 2: `pay_utility_bill`
+Legacy wrapper around `pay_bill` for backward compatibility.
 
 - **Input Parameters:**
   ```json

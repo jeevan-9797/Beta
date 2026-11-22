@@ -1,28 +1,13 @@
 // ==============================================================================
 // BETA Cedar Authorization Policies
 // AWS Bedrock AgentCore Gateway Guardrails for Senior Citizen Protection
+// Target Action: AgentCore::Action::"Errands___pay_bill"
+// Target Resource: AgentCore::Gateway::"<GATEWAY_ARN>"
 // ==============================================================================
 
 // ------------------------------------------------------------------------------
-// Policy 1: Absolute Emergency Freeze / Kill Switch
-// If the household is marked as frozen, forbid all financial actions immediately.
-// ------------------------------------------------------------------------------
-forbid (
-    principal,
-    action in [
-        Action::"execute_payment",
-        Action::"pay_utility_bill",
-        Action::"reorder_medicines"
-    ],
-    resource
-)
-when {
-    context.security_facts.frozen == true
-};
-
-// ------------------------------------------------------------------------------
-// Policy 2: Coercion & Scam Guardrail
-// Forbid all actions if suspicious urgency or scam indicators are flagged.
+// Rule 1: Emergency Freeze Kill Switch
+// Forbid all actions when household frozen flag is True
 // ------------------------------------------------------------------------------
 forbid (
     principal,
@@ -30,146 +15,70 @@ forbid (
     resource
 )
 when {
-    context.security_facts.scam_flag == true
+    context has input && context.input has frozen && context.input.frozen
 };
 
 // ------------------------------------------------------------------------------
-// Policy 3: Night Curfew (11:00 PM to 6:00 AM IST)
-// Senior citizens are vulnerable to late-night panic scams.
+// Rule 2: Coercion & Scam Detection Guardrail
+// Forbid all actions when scam_flag is True
 // ------------------------------------------------------------------------------
 forbid (
     principal,
-    action in [
-        Action::"execute_payment",
-        Action::"pay_utility_bill",
-        Action::"reorder_medicines"
-    ],
+    action,
     resource
 )
 when {
-    context.security_facts.hour_ist >= 23 || context.security_facts.hour_ist < 6
+    context has input && context.input has scam_flag && context.input.scam_flag
 };
 
 // ------------------------------------------------------------------------------
-// Policy 4: Hourly Transaction Frequency Limit
-// Prevent rapid drain of funds (burst limit: 2 payments per hour).
-// ------------------------------------------------------------------------------
-forbid (
-    principal,
-    action in [
-        Action::"execute_payment",
-        Action::"pay_utility_bill",
-        Action::"reorder_medicines"
-    ],
-    resource
-)
-when {
-    context.security_facts.payments_last_hour >= 2
-};
-
-// ------------------------------------------------------------------------------
-// Policy 5: Unknown Payee / Merchant Whitelist Enforcement
-// Financial transactions can only proceed to pre-registered billers or payees.
-// ------------------------------------------------------------------------------
-forbid (
-    principal,
-    action in [
-        Action::"execute_payment",
-        Action::"pay_utility_bill",
-        Action::"reorder_medicines"
-    ],
-    resource
-)
-when {
-    context.security_facts.payee_known == false
-};
-
-// ------------------------------------------------------------------------------
-// Policy 6: Absolute Ceiling
-// No single transaction may exceed ₹25,000 even with approval.
-// ------------------------------------------------------------------------------
-forbid (
-    principal,
-    action in [
-        Action::"execute_payment",
-        Action::"pay_utility_bill",
-        Action::"reorder_medicines"
-    ],
-    resource
-)
-when {
-    context.amount > 25000
-};
-
-// ------------------------------------------------------------------------------
-// Policy 7: Transactions Exceeding Auto-Limit Require Valid Guardian Approval
-// If amount > auto_limit (₹2,000), require approval_valid == true.
-// ------------------------------------------------------------------------------
-forbid (
-    principal,
-    action in [
-        Action::"execute_payment",
-        Action::"pay_utility_bill",
-        Action::"reorder_medicines"
-    ],
-    resource
-)
-when {
-    context.amount > 2000 && context.security_facts.approval_valid == false
-};
-
-// ------------------------------------------------------------------------------
-// Policy 8: Allow Standard Errands within Auto-Limit
-// Permit Kamala to pay bills and reorder medicines under auto_limit (₹2,000)
+// Rule 3: R2 Auto-Pay for Errands___pay_bill
+// Allows automated utility and errand payment under ₹2,000 to registered payees
+// during daytime hours (06:00 to 23:00 IST), within hourly rate limit (<2),
+// and with a valid unconsumed voice assessment.
 // ------------------------------------------------------------------------------
 permit (
-    principal == User::"KAMALA",
-    action in [
-        Action::"pay_utility_bill",
-        Action::"reorder_medicines",
-        Action::"check_bill_status",
-        Action::"list_saved_billers"
-    ],
+    principal,
+    action == AgentCore::Action::"Errands___pay_bill",
     resource
 )
 when {
-    context.amount <= 2000 &&
-    context.security_facts.frozen == false &&
-    context.security_facts.scam_flag == false &&
-    context.security_facts.payee_known == true
+    context.input.amount <= 2000 &&
+    context.input.payee_known &&
+    context.input.assessment_valid &&
+    context.input.hour_ist >= 6 &&
+    context.input.hour_ist < 23 &&
+    context.input.payments_last_hour < 2
 };
 
 // ------------------------------------------------------------------------------
-// Policy 9: Allow Authorized Errands with Valid Guardian Approval
+// Rule 4: R3 Approved Pay for Errands___pay_bill
+// Allows payments up to ₹25,000 if guardian approval is valid & cooling-off elapsed
 // ------------------------------------------------------------------------------
 permit (
-    principal == User::"KAMALA",
-    action in [
-        Action::"pay_utility_bill",
-        Action::"reorder_medicines"
-    ],
+    principal,
+    action == AgentCore::Action::"Errands___pay_bill",
     resource
 )
 when {
-    context.amount <= 25000 &&
-    context.security_facts.approval_valid == true &&
-    context.security_facts.frozen == false &&
-    context.security_facts.scam_flag == false
+    context.input.approval_valid &&
+    context.input.assessment_valid &&
+    context.input.amount <= 25000
 };
 
 // ------------------------------------------------------------------------------
-// Policy 10: Guardian Permissions
-// Arjun (Guardian) can inspect, authorize, alert, and freeze household state.
+// Rule 5: Baseline Read-Only & Informational Tools (R0 - R1)
+// Permitted unconditionally when not frozen
 // ------------------------------------------------------------------------------
 permit (
-    principal == Guardian::"ARJUN",
+    principal,
     action in [
-        Action::"approve_transaction",
-        Action::"reject_transaction",
-        Action::"emergency_freeze",
-        Action::"unfreeze",
-        Action::"view_audit_trail",
-        Action::"query_status"
+        AgentCore::Action::"Errands___check_bill_status",
+        AgentCore::Action::"Errands___list_saved_billers",
+        AgentCore::Action::"Guardian___check_approval_status",
+        AgentCore::Action::"Guardian___get_household_rules",
+        AgentCore::Action::"Shield___verify_payee_trust",
+        AgentCore::Action::"Shield___evaluate_cooling_off"
     ],
     resource
 );

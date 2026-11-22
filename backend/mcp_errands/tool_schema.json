@@ -4,56 +4,80 @@
   "description": "Errand tools for elderly care: paying bills, reordering medicines, and checking utilities in India.",
   "tools": [
     {
-      "name": "pay_utility_bill",
-      "description": "Pay an electricity, water, gas, or broadband bill for the elderly household through approved billers (e.g. BESCOM, BWSSB).",
+      "name": "pay_bill",
+      "description": "Pay an electricity, water, gas, or broadband bill for the elderly household through approved billers/payees via BBPS gateway.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "biller_id": {
+          "household_id": {
             "type": "string",
-            "description": "Unique biller identifier, e.g. 'BESCOM' for electricity or 'BWSSB' for water."
+            "description": "Household ID, e.g. 'HH#KAMALA_01'."
+          },
+          "bill_id": {
+            "type": "string",
+            "description": "Unique bill identifier, e.g. 'BILL_BESCOM_NOV'."
+          },
+          "payee_id": {
+            "type": "string",
+            "description": "Payee or biller identifier, e.g. 'BESCOM' or 'BWSSB'."
           },
           "amount": {
             "type": "number",
             "description": "Bill amount in INR to pay."
           },
-          "household_id": {
+          "idem_key": {
             "type": "string",
-            "description": "Household ID, e.g. 'HH#KAMALA_01'. Defaults to configured household."
+            "description": "Unique idempotency key for preventing duplicate charges."
+          },
+          "assessment_id": {
+            "type": "string",
+            "description": "Telemetry voice assessment identifier validating lack of coercion."
           },
           "approval_id": {
             "type": "string",
-            "description": "Guardian approval identifier if amount exceeds auto-limit."
+            "description": "Optional guardian authorization ID if transaction exceeds auto_limit."
+          },
+          "note": {
+            "type": "string",
+            "description": "Optional contextual note or spoken reason from parent."
+          },
+          "payee_known": {
+            "type": "boolean",
+            "description": "Security Fact: True if payee is pre-registered on household whitelist."
+          },
+          "hour_ist": {
+            "type": "integer",
+            "description": "Security Fact: Current hour in Asia/Kolkata timezone (0-23)."
+          },
+          "payments_last_hour": {
+            "type": "integer",
+            "description": "Security Fact: Number of payments executed in the last 60 minutes."
+          },
+          "approval_valid": {
+            "type": "boolean",
+            "description": "Security Fact: True if valid non-expired guardian approval exists and cooling-off elapsed."
+          },
+          "scam_flag": {
+            "type": "boolean",
+            "description": "Security Fact: True if coercion keywords or R4 risk level detected."
+          },
+          "frozen": {
+            "type": "boolean",
+            "description": "Security Fact: True if household emergency freeze is engaged."
+          },
+          "assessment_valid": {
+            "type": "boolean",
+            "description": "Security Fact: True if fresh (<300s), unused assessment without R4 risk exists."
           }
         },
-        "required": ["biller_id", "amount"]
-      }
-    },
-    {
-      "name": "reorder_medicines",
-      "description": "Order chronic monthly medications from verified neighborhood pharmacies (e.g. Apollo Pharmacy) for the elderly parent.",
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "medicine_ids": {
-            "type": "array",
-            "items": { "type": "string" },
-            "description": "List of medicine IDs to refill, e.g. ['METFORMIN_500MG', 'AMLODIPINE_5MG']."
-          },
-          "pharmacy_name": {
-            "type": "string",
-            "description": "Target pharmacy merchant name (e.g. 'Apollo Pharmacy')."
-          },
-          "household_id": {
-            "type": "string",
-            "description": "Household ID, e.g. 'HH#KAMALA_01'."
-          },
-          "approval_id": {
-            "type": "string",
-            "description": "Approval ID if total exceeds auto-limit."
-          }
-        },
-        "required": ["medicine_ids"]
+        "required": [
+          "household_id",
+          "bill_id",
+          "payee_id",
+          "amount",
+          "idem_key",
+          "assessment_id"
+        ]
       }
     },
     {
@@ -84,6 +108,33 @@
             "description": "Household ID."
           }
         }
+      }
+    },
+    {
+      "name": "reorder_medicines",
+      "description": "Order chronic monthly medications from verified neighborhood pharmacies (e.g. Apollo Pharmacy) for the elderly parent.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "medicine_ids": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "List of medicine IDs to refill, e.g. ['METFORMIN_500MG', 'AMLODIPINE_5MG']."
+          },
+          "pharmacy_name": {
+            "type": "string",
+            "description": "Target pharmacy merchant name (e.g. 'Apollo Pharmacy')."
+          },
+          "household_id": {
+            "type": "string",
+            "description": "Household ID, e.g. 'HH#KAMALA_01'."
+          },
+          "approval_id": {
+            "type": "string",
+            "description": "Approval ID if total exceeds auto-limit."
+          }
+        },
+        "required": ["medicine_ids"]
       }
     }
   ]
