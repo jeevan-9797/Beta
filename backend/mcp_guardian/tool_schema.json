@@ -4,6 +4,101 @@
   "description": "Guardian oversight tools for senior citizen safety: requesting approvals, checking approval status, emergency alerts, and retrieving safety rules.",
   "tools": [
     {
+      "name": "request_approval",
+      "description": "Trigger a Guardian WhatsApp authorization workflow when a transaction or errand exceeds the household auto-limit or requires guardian confirmation.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "household_id": {
+            "type": "string",
+            "description": "Household ID, e.g. 'kamala' or 'HH#kamala'."
+          },
+          "action_type": {
+            "type": "string",
+            "description": "Type of action e.g. 'PAYMENT', 'BILL', 'MEDICINE'."
+          },
+          "payee_name": {
+            "type": "string",
+            "description": "Name of the merchant, utility, or payee."
+          },
+          "amount": {
+            "type": "number",
+            "description": "Requested transaction amount in INR."
+          },
+          "reason": {
+            "type": "string",
+            "description": "Spoken reason for the transaction."
+          },
+          "bill_id": {
+            "type": "string",
+            "description": "Optional utility bill ID."
+          },
+          "med_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Optional list of medication IDs."
+          }
+        },
+        "required": ["payee_name", "amount"]
+      }
+    },
+    {
+      "name": "get_approval_status",
+      "description": "Retrieve computed live status of an approval request (PENDING, APPROVED_COOLING_OFF, READY, DECLINED, CANCELLED, or EXPIRED).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "household_id": {
+            "type": "string",
+            "description": "Household ID."
+          },
+          "approval_id": {
+            "type": "string",
+            "description": "The unique approval ID (e.g. 'APR_12345678')."
+          }
+        },
+        "required": ["approval_id"]
+      }
+    },
+    {
+      "name": "notify_guardian",
+      "description": "Send an immediate WhatsApp priority notification or emergency scam/curfew alert to the guardian.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "household_id": {
+            "type": "string",
+            "description": "Household ID."
+          },
+          "severity": {
+            "type": "string",
+            "enum": ["INFO", "LOW", "MEDIUM", "HIGH", "CRITICAL"],
+            "description": "Incident urgency level."
+          },
+          "message": {
+            "type": "string",
+            "description": "Notification or alert message text."
+          }
+        },
+        "required": ["message"]
+      }
+    },
+    {
+      "name": "get_guard_status",
+      "description": "Return household safety status: frozen status, financial limits, and all active approvals in PENDING or APPROVED_COOLING_OFF state.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "household_id": {
+            "type": "string",
+            "description": "Household ID."
+          }
+        }
+      }
+    },
+    {
       "name": "request_guardian_approval",
       "description": "Trigger a Guardian WhatsApp authorization workflow when an errand or transaction exceeds the household auto-limit.",
       "inputSchema": {
@@ -27,7 +122,7 @@
           },
           "household_id": {
             "type": "string",
-            "description": "Household ID, e.g. 'HH#KAMALA_01'."
+            "description": "Household ID, e.g. 'HH#kamala'."
           }
         },
         "required": ["errand_type", "payee_name", "amount"]

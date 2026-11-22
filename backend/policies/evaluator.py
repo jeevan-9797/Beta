@@ -23,6 +23,42 @@ except ImportError:
 
 DEFAULT_GATEWAY_ARN = "arn:aws:bedrock:ap-south-1:123456789012:gateway/beta-gateway"
 
+GUARDIAN_TOOLS = {
+    "request_approval",
+    "get_approval_status",
+    "notify_guardian",
+    "get_guard_status",
+    "request_guardian_approval",
+    "check_approval_status",
+    "send_guardian_alert",
+    "get_household_rules",
+}
+
+SHIELD_TOOLS = {
+    "assess_risk",
+    "explain_scam",
+    "verify_payee_trust",
+    "evaluate_cooling_off",
+}
+
+ERRANDS_READ_ONLY_TOOLS = {
+    "get_profile",
+    "list_billers",
+    "list_payees",
+    "list_meds",
+    "get_due_bills",
+    "find_slots",
+    "book_appointment",
+    "set_reminder",
+    "check_bill_status",
+    "list_saved_billers",
+}
+
+MONEY_ACTIONS = {
+    "Errands___pay_bill",
+    "Errands___reorder_medicine",
+}
+
 
 def load_policy_text(policy_path: Optional[str] = None) -> str:
     """Load Cedar policy file contents."""
@@ -67,11 +103,23 @@ def evaluate_policy(
         (is_allowed: bool, decision: 'ALLOW' | 'DENY', diagnostics: dict)
     """
     # Normalize action name to AgentCore format
-    action_name = tool_name
-    if not action_name.startswith("AgentCore::Action::"):
-        if "___" not in action_name:
-            action_name = f"Errands___{action_name}"
-        action_name = f'AgentCore::Action::"{action_name}"'
+    action_raw = tool_name
+    if action_raw.startswith('AgentCore::Action::"'):
+        canonical_name = action_raw[len('AgentCore::Action::"') : -1]
+    elif action_raw.startswith("AgentCore::Action::"):
+        canonical_name = action_raw[len("AgentCore::Action::") :]
+    else:
+        canonical_name = action_raw
+
+    if "___" not in canonical_name:
+        if canonical_name in GUARDIAN_TOOLS:
+            canonical_name = f"Guardian___{canonical_name}"
+        elif canonical_name in SHIELD_TOOLS:
+            canonical_name = f"Shield___{canonical_name}"
+        else:
+            canonical_name = f"Errands___{canonical_name}"
+
+    action_name = f'AgentCore::Action::"{canonical_name}"'
 
     principal = f'AgentCore::User::"{household_id}"'
     resource = f'AgentCore::Gateway::"{gateway_arn}"'
@@ -112,10 +160,31 @@ def evaluate_policy(
     frozen = bool(input_data.get("frozen", False))
     scam_flag = bool(input_data.get("scam_flag", False))
 
-    if frozen:
-        return False, "DENY", {"reason": "forbid: frozen == true"}
-    if scam_flag:
-        return False, "DENY", {"reason": "forbid: scam_flag == true"}
+    is_money_action = canonical_name in MONEY_ACTIONS
+
+    # Forbid rules only apply to money actions
+    if is_money_action:
+        if frozen:
+            return False, "DENY", {"reason": "forbid: frozen == true"}
+        if scam_flag:
+            return False, "DENY", {"reason": "forbid: scam_flag == true"}
+
+    # Guardian oversight and Shield assessment tools are unconditionally permitted
+    short_name = canonical_name.split("___")[-1]
+    if (
+        canonical_name.startswith("Guardian___")
+        or canonical_name.startswith("Shield___")
+        or short_name in GUARDIAN_TOOLS
+        or short_name in SHIELD_TOOLS
+    ):
+        return True, "ALLOW", {"reason": "permit: guardian or shield tool"}
+
+    # Baseline read-only / R0-R1 Errand tools
+    if (
+        short_name in ERRANDS_READ_ONLY_TOOLS
+        or any(t in canonical_name for t in ERRANDS_READ_ONLY_TOOLS)
+    ):
+        return True, "ALLOW", {"reason": "permit: baseline read-only tool"}
 
     amount = float(input_data.get("amount", 0.0))
     payee_known = bool(input_data.get("payee_known", False))
@@ -124,19 +193,10 @@ def evaluate_policy(
     payments_last_hour = int(input_data.get("payments_last_hour", 0))
     approval_valid = bool(input_data.get("approval_valid", False))
 
-    # Check baseline read-only / R0-R1 tools
-    r0_r1_tools = [
-        "get_profile", "list_billers", "list_payees", "list_meds",
-        "get_due_bills", "find_slots", "book_appointment", "set_reminder",
-        "check_bill_status", "list_saved_billers", "check_approval_status",
-        "get_household_rules", "verify_payee_trust", "evaluate_cooling_off",
-    ]
-    if any(t in action_name for t in r0_r1_tools):
-        return True, "ALLOW", {"reason": "permit: baseline read-only tool"}
-
     # Rule 3: R2 Auto-Pay (pay_bill and reorder_medicine)
     if (
-        amount <= 2000
+        is_money_action
+        and amount <= 2000
         and payee_known
         and assessment_valid
         and (6 <= hour_ist < 23)
@@ -145,7 +205,7 @@ def evaluate_policy(
         return True, "ALLOW", {"reason": "permit: R2 auto-pay"}
 
     # Rule 4: R3 Approved Pay (pay_bill and reorder_medicine)
-    if approval_valid and assessment_valid and amount <= 25000:
+    if is_money_action and approval_valid and assessment_valid and amount <= 25000:
         return True, "ALLOW", {"reason": "permit: R3 approved-pay"}
 
     return False, "DENY", {"reason": "default deny: no permit matched"}

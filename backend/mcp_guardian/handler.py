@@ -22,28 +22,33 @@ def handle_tool_call(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any
     """Dispatch tool execution to appropriate Python function."""
     logger.info(f"Guardian MCP executing tool: {tool_name} with arguments {arguments}")
 
-    if tool_name == "request_guardian_approval":
-        return tools.request_guardian_approval(
-            errand_type=arguments.get("errand_type", "EXPENSE"),
+    clean_name = tool_name
+    if "___" in clean_name:
+        clean_name = clean_name.split("___")[-1]
+
+    if clean_name in ("request_approval", "request_guardian_approval"):
+        return tools.request_approval(
+            household_id=arguments.get("household_id"),
+            action_type=arguments.get("action_type") or arguments.get("errand_type", "PAYMENT"),
             payee_name=arguments.get("payee_name", ""),
             amount=float(arguments.get("amount", 0)),
-            reason=arguments.get("reason"),
-            household_id=arguments.get("household_id"),
+            reason=arguments.get("reason", ""),
+            bill_id=arguments.get("bill_id"),
+            med_ids=arguments.get("med_ids"),
         )
-    elif tool_name == "check_approval_status":
-        return tools.check_approval_status(
+    elif clean_name in ("get_approval_status", "check_approval_status"):
+        return tools.get_approval_status(
+            household_id=arguments.get("household_id"),
             approval_id=arguments.get("approval_id", ""),
-            household_id=arguments.get("household_id"),
         )
-    elif tool_name == "send_guardian_alert":
-        return tools.send_guardian_alert(
-            alert_type=arguments.get("alert_type", "SCAM_SUSPECTED"),
+    elif clean_name in ("notify_guardian", "send_guardian_alert"):
+        return tools.notify_guardian(
+            household_id=arguments.get("household_id"),
+            severity=arguments.get("severity", "INFO"),
             message=arguments.get("message", ""),
-            severity=arguments.get("severity", "HIGH"),
-            household_id=arguments.get("household_id"),
         )
-    elif tool_name == "get_household_rules":
-        return tools.get_household_rules_tool(
+    elif clean_name in ("get_guard_status", "get_household_rules"):
+        return tools.get_guard_status(
             household_id=arguments.get("household_id"),
         )
     else:

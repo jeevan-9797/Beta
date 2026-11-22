@@ -168,6 +168,7 @@ def verify_approval_valid(
     if now is None:
         now = datetime.now(timezone.utc)
     now_iso = now.isoformat()
+    now_epoch = int(now.timestamp())
 
     approval = get_approval(household_id, approval_id)
     if not approval:
@@ -177,7 +178,10 @@ def verify_approval_valid(
     if status != "APPROVED":
         return False
 
-    # Check expiration
+    # Check expiration via TTL epoch or expires_at ISO
+    ttl = approval.get("ttl")
+    if ttl is not None and now_epoch > int(ttl):
+        return False
     expires_at = approval.get("expires_at")
     if expires_at and now_iso > str(expires_at):
         return False
@@ -198,17 +202,30 @@ def verify_approval_valid(
         if app_payee != target_bill and target_bill not in app_payee:
             return False
 
-    # Check cooling-off period: now >= approved_at + cooling_off_seconds
-    cooling_off_until = approval.get("cooling_off_until")
-    if cooling_off_until:
-        if now_iso < str(cooling_off_until):
+    # Check cooling-off period / executable_at
+    executable_at = approval.get("executable_at")
+    if executable_at is not None:
+        if now_epoch < int(executable_at):
             return False
     else:
-        approved_at_str = approval.get("approved_at") or approval.get("responded_at") or approval.get("requested_at")
-        approved_at = parse_timestamp(approved_at_str)
-        cooling_off_sec = int(approval.get("cooling_off_seconds", settings.COOLING_OFF_SECONDS))
-        if approved_at and now < (approved_at + timedelta(seconds=cooling_off_sec)):
-            return False
+        cooling_off_until = approval.get("cooling_off_until")
+        if cooling_off_until:
+            if now_iso < str(cooling_off_until):
+                return False
+        else:
+            approved_at_val = (
+                approval.get("approved_at")
+                or approval.get("responded_at")
+                or approval.get("requested_at")
+            )
+            cooling_off_sec = int(approval.get("cooling_off_seconds", settings.COOLING_OFF_SECONDS))
+            if isinstance(approved_at_val, (int, float)):
+                if now_epoch < int(approved_at_val) + cooling_off_sec:
+                    return False
+            elif approved_at_val:
+                approved_at = parse_timestamp(str(approved_at_val))
+                if approved_at and now < (approved_at + timedelta(seconds=cooling_off_sec)):
+                    return False
 
     return True
 
