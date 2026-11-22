@@ -1,0 +1,68 @@
+[
+  {
+    "PK": "HH#kamala",
+    "SK": "MEMBER#parent",
+    "name": "Kamala",
+    "age": 74,
+    "city": "Dharwad",
+    "preferred_lang": "hi-IN",
+    "phone": "+919000000001",
+    "guardian_sk": "MEMBER#guardian"
+  },
+  {
+    "PK": "HH#kamala",
+    "SK": "MEMBER#guardian",
+    "name": "Rohan",
+    "relationship": "Son",
+    "city": "Bengaluru",
+    "whatsapp_number": "+919999999999",
+    "_comment": "NOTE: Replace with live Twilio sandbox demo number before stage run"
+  },
+  {
+    "PK": "HH#kamala",
+    "SK": "BILLER#bescom",
+    "biller_name": "BESCOM Electricity",
+    "aliases": [
+      "bijli",
+      "electricity",
+      "light bill"
+    ],
+    "consumer_no": "104928371",
+    "amount_due": 1240,
+    "due_date": "2026-11-28",
+    "payee_known": true,
+    "status": "UNPAID"
+  },
+  {
+    "PK": "HH#kamala",
+    "SK": "PAYEE#apollo",
+    "payee_name": "Apollo Pharmacy",
+    "upi_id": "apollopharmacy@icici",
+    "payee_known": true,
+    "category": "pharmacy"
+  },
+  {
+    "PK": "HH#kamala",
+    "SK": "MED#telma40",
+    "med_name": "Telma 40",
+    "dosage": "1 tablet after breakfast",
+    "strips_remaining": 2,
+    "reorder_qty_strips": 6,
+    "reorder_cost_inr": 3800,
+    "pharmacy_sk": "PAYEE#apollo"
+  },
+  {
+    "PK": "HH#kamala",
+    "SK": "RULE#default",
+    "auto_approve_limit_inr": 2000,
+    "hard_cap_inr": 25000,
+    "quiet_hours_ist": [
+      23,
+      6
+    ],
+    "max_payments_per_hour": 2,
+    "cooling_off_seconds": 20,
+    "approval_expiry_seconds": 7200,
+    "frozen": false
+  }
+]
