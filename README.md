@@ -7,6 +7,7 @@ THE CODE FOR THIS PROJECT ARE IN RESPECTIVE BRANCHES, NOTHING IS MERGED TO MAIN 
 
 **BETA** is a bilingual (Hindi/English) voice-first assistant that lets elderly parents run everyday errands—paying utility bills, booking doctor slots, and reordering medicines—while protecting them from "digital arrest" and coercion scams using a **two-key authorization architecture**.
 
+Here is the link for the **mvp functional prototype** - https://ai.studio/apps/3d28a6c4-34a7-4997-8dda-9ba92ea91b99 
 ---
 
 ## Core Idea
