@@ -1,0 +1,6 @@
+{
+  "name": "BETA — Two-Key AI Agent for India's Parents",
+  "description": "Voice AI agent for elderly Indian parents protected by a Cedar-style Guardian Gate, WhatsApp family approvals, cooling-off countdown, and Scam Shield.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

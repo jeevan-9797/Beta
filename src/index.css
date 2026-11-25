@@ -1,0 +1,85 @@
+@import "tailwindcss";
+
+@theme {
+  --font-display: "Plus Jakarta Sans", "Noto Sans Devanagari", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "DM Sans", "Noto Sans Devanagari", ui-sans-serif, system-ui, sans-serif;
+  --font-devanagari: "Noto Sans Devanagari", "DM Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+
+  --color-beta-navy: #1B1F6B;
+  --color-beta-navy-dark: #13164D;
+  --color-beta-orange: #FD9B36;
+  --color-beta-cream: #F8F2E4;
+  --color-beta-green: #1F7A55;
+  --color-beta-red: #B42318;
+}
+
+@layer base {
+  body {
+    font-family: var(--font-sans);
+    background-color: #F8F2E4;
+    color: #141738;
+  }
+
+  h1, h2, h3, h4 {
+    font-family: var(--font-display);
+  }
+}
+
+.lang-hi {
+  font-family: var(--font-devanagari);
+  line-height: 1.6;
+}
+
+.lang-hi p,
+.lang-hi span,
+.lang-hi li {
+  line-height: 1.6;
+}
+
+@keyframes soundwave {
+  0%, 100% {
+    transform: scaleY(0.35);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+.animate-wave-1 {
+  animation: soundwave 0.9s ease-in-out infinite;
+}
+.animate-wave-2 {
+  animation: soundwave 0.75s ease-in-out 0.15s infinite;
+}
+.animate-wave-3 {
+  animation: soundwave 1.05s ease-in-out 0.3s infinite;
+}
+.animate-wave-4 {
+  animation: soundwave 0.8s ease-in-out 0.45s infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-wave-1,
+  .animate-wave-2,
+  .animate-wave-3,
+  .animate-wave-4 {
+    animation: none;
+  }
+}
+
+/* Subtle custom scrollbars for the 3 panel feeds */
+.panel-scroll::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+.panel-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.panel-scroll::-webkit-scrollbar-thumb {
+  background: rgba(27, 31, 107, 0.16);
+  border-radius: 9999px;
+}
+.panel-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(27, 31, 107, 0.3);
+}
