@@ -22,13 +22,13 @@ def test_risk_enums():
 def test_assess_risk_input_valid():
     payload = {
         "household_id": "hh_delhi_101",
-        "snippet": "Beta, BESCOM bijli ka bill pay kar do ₹1,450.",
+        "snippet": "Beta, BESCOM bijli ka bill pay kar do ₹1,240 jo 28 Nov ko due hai.",
         "intent": "pay_utility_bill",
-        "amount": 1450.0,
+        "amount": 1240.0,
     }
     obj = AssessRiskInput(**payload)
     assert obj.household_id == "hh_delhi_101"
-    assert obj.amount == 1450.0
+    assert obj.amount == 1240.0
 
     # Test with amount=None
     obj_no_amt = AssessRiskInput(
@@ -78,16 +78,16 @@ def test_receipt_contracts():
         household_id="hh_blr_4012",
         action_type="utility_payment",
         payee="BESCOM",
-        amount=1450.0,
-        tier=RiskTier.R1,
+        amount=1240.0,
+        tier=RiskTier.R2,
         decision="EXECUTED",
-        reason_facts={"consumer_no": "90812314", "reference_id": "TXN_991204"},
+        reason_facts={"consumer_no": "90812314", "reference_id": "TXN_991204", "due_date": "28 Nov"},
     )
     assert receipt_in.payee == "BESCOM"
-    assert receipt_in.tier == RiskTier.R1
+    assert receipt_in.tier == RiskTier.R2
 
     receipt_out = ReceiptOutput(
-        spoken_summary="Uncleji, aapka ₹1,450 ka BESCOM bill successfully pay ho gaya.",
-        whatsapp_summary="Receipt: BESCOM ₹1,450 paid successfully.",
+        spoken_summary="Uncleji, aapka ₹1,240 ka BESCOM bill successfully pay ho gaya.",
+        whatsapp_summary="Receipt: BESCOM ₹1,240 paid successfully.",
     )
-    assert "1,450" in receipt_out.spoken_summary
+    assert "1,240" in receipt_out.spoken_summary

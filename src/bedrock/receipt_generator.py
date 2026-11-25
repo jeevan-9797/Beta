@@ -103,7 +103,7 @@ class BedrockReceiptGenerator:
         amount_str = f"₹{inp.amount:,.2f}" if inp.amount is not None else "N/A"
         tier_val = inp.tier.value if hasattr(inp.tier, "value") else str(inp.tier)
 
-        if inp.decision == "BLOCKED" or inp.tier in (RiskTier.R4, RiskTier.R3):
+        if inp.decision == "BLOCKED" or inp.tier == RiskTier.R4:
             why_reason = "Police, CBI ya legitimate agencies kabhi video call ya phone pe urgent paise transfer karne ko nahi bolti."
             spoken = (
                 f"Uncleji, humne suspicious request ko suraksha ke liye turant rok diya hai, "

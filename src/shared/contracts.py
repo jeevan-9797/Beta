@@ -51,7 +51,7 @@ class AssessRiskInput(BaseModel):
     snippet: str = Field(
         ...,
         description="Spoken conversation transcript, transcription chunk, or instruction text.",
-        examples=["Beta, BESCOM bijli ka bill pay kar do ₹1,450."],
+        examples=["Beta, BESCOM bijli ka bill pay kar do ₹1,240 jo 28 Nov ko due hai."],
     )
     intent: str = Field(
         ...,
@@ -61,7 +61,7 @@ class AssessRiskInput(BaseModel):
     amount: Optional[float] = Field(
         default=None,
         description="Transaction or payment amount in INR (₹), if applicable.",
-        examples=[1450.0, 50000.0, None],
+        examples=[1240.0, 3800.0, 200000.0, None],
     )
 
 
@@ -168,12 +168,12 @@ class ReceiptInput(BaseModel):
     amount: Optional[float] = Field(
         default=None,
         description="Monetary amount in INR (₹), or None if not a monetary action.",
-        examples=[1450.0, None],
+        examples=[1240.0, 3800.0, None],
     )
     tier: RiskTier = Field(
         ...,
         description="Risk tier validated during execution.",
-        examples=[RiskTier.R1, RiskTier.R4],
+        examples=[RiskTier.R2, RiskTier.R3, RiskTier.R4],
     )
     decision: str = Field(
         ...,
@@ -183,7 +183,7 @@ class ReceiptInput(BaseModel):
     reason_facts: Dict[str, Any] = Field(
         default_factory=dict,
         description="Factual metadata regarding payment reference, meter number, or detected threat signals.",
-        examples=[{"biller": "BESCOM", "consumer_no": "90812314", "reference_id": "TXN_771892"}],
+        examples=[{"biller": "BESCOM", "consumer_no": "90812314", "reference_id": "TXN_771892", "due_date": "28 Nov"}],
     )
 
 
@@ -196,13 +196,13 @@ class ReceiptOutput(BaseModel):
         ...,
         description="Short, comforting, plain-language audio script read to the senior over the voice call.",
         examples=[
-            "Uncleji, aapka ₹1,450 ka BESCOM bijli bill successfully pay ho gaya hai. Reference number 771892 hai."
+            "Uncleji, aapka ₹1,240 ka BESCOM bijli bill successfully pay ho gaya hai. Reference number 771892 hai."
         ],
     )
     whatsapp_summary: str = Field(
         ...,
         description="Detailed, structured WhatsApp receipt dispatched to the senior and guardian.",
         examples=[
-            "🧾 *BETA Transaction Receipt*\n• Biller: BESCOM\n• Amount: ₹1,450\n• Status: Successful ✅\n• Ref: TXN_771892\n• Sent to guardian."
+            "🧾 *BETA Transaction Receipt*\n• Biller: BESCOM\n• Amount: ₹1,240\n• Status: Successful ✅\n• Ref: TXN_771892\n• Sent to guardian."
         ],
     )

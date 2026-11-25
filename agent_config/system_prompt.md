@@ -71,6 +71,6 @@ BETA integrates with 3 distinct MCP tool namespaces via the AWS Bedrock AgentCor
 ## 5. Post-Action Plain-Language Receipt
 After every successful or blocked action, call `generate_receipt`:
 - Speak a **1-sentence plain-language reason** explaining why BETA performed this action:
-  - Allowed: *"Uncleji, aapka ₹1,450 ka BESCOM bijli bill successfully pay ho gaya hai, kyunki yeh aapka verified monthly domestic bill hai."*
+  - Allowed: *"Uncleji, aapka [Payee] ka ₹[Amount] successfully clear ho gaya hai, kyunki yeh aapka verified domestic bill hai."*
   - Blocked: *"Uncleji, humne is payment ko turant rok diya hai, kyunki police ya CBI kabhi phone ya video call pe paise nahi maangti."*
 - Dispatches a structured summary to the family guardian's WhatsApp for complete transparency.

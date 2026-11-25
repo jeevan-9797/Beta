@@ -31,12 +31,13 @@ def test_keywords_export():
 
 
 def test_shield_assess_risk_scam_digital_arrest():
-    snippet = "Beta, CBI officer bol raha hai Skype video call pe digital arrest kiya hai aur ₹2,50,000 mang raha hai."
+    # Official Demo Seed: Journey C (Tier R4) - Fake CBI digital arrest demanding ₹2,00,000
+    snippet = "Beta, CBI officer bol raha hai Skype video call pe digital arrest kiya hai aur ₹2,00,000 mang raha hai."
     res = shield_assess_risk(
         household_id="hh_delhi_101",
         snippet=snippet,
         intent="digital_arrest",
-        amount=250000.0,
+        amount=200000.0,
     )
     assert res["tier"] == "R4"
     assert res["risk_level"] == "HIGH"
@@ -54,12 +55,13 @@ def test_shield_assess_risk_scam_digital_arrest():
 
 
 def test_shield_assess_risk_guardian_gate_r2_small_utility():
-    snippet = "Beta, is mahine ka BESCOM bijli bill ₹1,450 clear kar do."
+    # Official Demo Seed: Journey A (Tier R2) - BESCOM bill for ₹1,240 (due 28 Nov)
+    snippet = "Beta, is mahine ka BESCOM bijli bill ₹1,240 (due 28 Nov) clear kar do."
     res = shield_assess_risk(
         household_id="hh_blr_4012",
         snippet=snippet,
         intent="pay_utility_bill",
-        amount=1450.0,
+        amount=1240.0,
     )
     # Under Guardian Gate: known payee <= 2000 is Tier R2
     assert res["tier"] == "R2"
@@ -75,12 +77,13 @@ def test_shield_assess_risk_guardian_gate_r2_small_utility():
 
 
 def test_shield_assess_risk_guardian_gate_r3_high_amount():
-    snippet = "Beta, is mahine ka Tata Power bill ₹4,500 clear kar do."
+    # Official Demo Seed: Journey B (Tier R3) - Medicine reorder for ₹3,800 (> ₹2,000 limit)
+    snippet = "Beta, Apollo Pharmacy se monthly diabetes and BP medicines reorder kar do ₹3,800."
     res = shield_assess_risk(
         household_id="hh_mumbai_881",
         snippet=snippet,
-        intent="pay_utility_bill",
-        amount=4500.0,
+        intent="reorder_medicine",
+        amount=3800.0,
     )
     # Under Guardian Gate: amount > 2000 requires Guardian WhatsApp approval (R3)
     assert res["tier"] == "R3"

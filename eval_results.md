@@ -12,9 +12,9 @@
 | **Precision** | **100.0%** | > 95.0% | ✅ **Passed** |
 | **Overall Binary Accuracy** | **100.0%** | > 98.0% | ✅ **Passed** |
 | **Guardian Gate Tier Match Rate** | **100.0%** | > 95.0% | ✅ **Passed** |
-| **Median Latency** | **0.029 ms** | < 5.0 ms | ⚡ **Ultra-Fast Fast-Path** |
-| **Average Latency** | **0.037 ms** | < 10.0 ms | ⚡ **Sub-Millisecond** |
-| **p95 Latency** | **0.045 ms** | < 25.0 ms | ⚡ **Consistent** |
+| **Median Latency** | **0.053 ms** | < 5.0 ms | ⚡ **Ultra-Fast Fast-Path** |
+| **Average Latency** | **0.076 ms** | < 10.0 ms | ⚡ **Sub-Millisecond** |
+| **p95 Latency** | **0.139 ms** | < 25.0 ms | ⚡ **Consistent** |
 
 ---
 

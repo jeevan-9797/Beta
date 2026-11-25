@@ -61,8 +61,13 @@ Beta/
 ├── eval_results.md                    # Benchmark evaluation report (pitch slide numbers)
 ├── .gitignore                         # Python/IDE ignore rules
 ├── agent_config/
-│   ├── system_prompt.md               # Production Hinglish/English system prompt with de-escalation
-│   └── tool_descriptions.json         # ElevenLabs agent tools, interruption & execution modes
+│   ├── system_prompt.md               # Canonical Hinglish/English system prompt with de-escalation
+│   ├── system_prompt_live.md          # Live prompt mapped to exact Gateway-prefixed tool names
+│   ├── tool_descriptions.json         # Base tool definitions (shield-mcp, errands-mcp, guardian-mcp)
+│   ├── tool_descriptions_live.json    # Live ElevenLabs tool schema synced from Gateway tools/list
+│   └── elevenlabs_setup_checklist.md  # Production dashboard setup & Journeys A, B, C voice verification
+├── scripts/
+│   └── sync_gateway_tools.py          # Auto-sync Gateway tools/list via MCP Streamable HTTP/SSE
 ├── data/
 │   └── scam_corpus_eval.json          # 80 realistic benchmark test cases (40 scams, 40 benign)
 ├── src/
@@ -126,6 +131,34 @@ Jeevan's **Request Interceptor Lambda** can import `get_assessment_record(hh, to
 `src/shield_mcp/server.py` exposes:
 1. **FastMCP Server**: Run locally or via SSE/HTTP (`python src/shield_mcp/server.py`).
 2. **AWS Lambda Handler (`lambda_handler`)**: Attach directly as an Action Group target in AWS Bedrock AgentCore Gateway in `ap-south-1`.
+
+---
+
+## 🎙️ Official Demo Seed Journeys
+
+| Journey | Path & Gate | Scenario & Seed Figure | Expected Outcome |
+| :--- | :--- | :--- | :--- |
+| **Journey A** | **Happy Path**<br>(Tier R2, $\le$ ₹2,000) | **BESCOM electricity bill for ₹1,240 (due 28 Nov)** + Dr. Sharma routine BP checkup appointment | Payee & amount read-back completed $\rightarrow$ payment executed via `Errands___pay_bill` $\rightarrow$ appointment booked $\rightarrow$ plain-language audio receipt. |
+| **Journey B** | **Second Key**<br>(Tier R3, > ₹2,000) | **Apollo Pharmacy chronic medicine reorder for ₹3,800** (above ₹2,000 limit) | Payment held $\rightarrow$ 20-second demo cooling-off countdown initiated $\rightarrow$ interactive approval request dispatched to family guardian's WhatsApp via `Guardian___request_approval`. |
+| **Journey C** | **Scam Path**<br>(Tier R4, Threat) | **Fake CBI digital arrest call demanding ₹2,00,000** over Skype video call | Instantly blocked in <0.05ms by Scam Shield & Cedar Policy $\rightarrow$ `Shield___explain_scam` calms elder $\rightarrow$ `Guardian___notify_alert` $\rightarrow$ National Cyber Helpline **1930** recited. |
+
+For the complete ElevenLabs dashboard setup and live voice test scripts, see [`agent_config/elevenlabs_setup_checklist.md`](agent_config/elevenlabs_setup_checklist.md).
+
+---
+
+## 🔄 Live ElevenLabs Gateway Tool Synchronization
+
+Synchronize tools directly from Jeevan's live AWS Bedrock AgentCore Gateway:
+```bash
+python scripts/sync_gateway_tools.py --gateway-url "https://<gateway-id>.execute-api.ap-south-1.amazonaws.com/mcp"
+```
+Or run in offline/mock mode:
+```bash
+python scripts/sync_gateway_tools.py --mock
+```
+This automatically maps dot-notation names to Gateway-prefixed names (e.g. `Errands___pay_bill`, `Shield___assess_risk`), outputs `agent_config/tool_descriptions_live.json`, and updates `agent_config/system_prompt_live.md`.
+
+For dashboard setup and Journeys A, B, and C voice verification scripts, see [`agent_config/elevenlabs_setup_checklist.md`](agent_config/elevenlabs_setup_checklist.md).
 
 ---
 
