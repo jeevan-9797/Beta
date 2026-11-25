@@ -1,3 +1,5 @@
+> **Note:** The code hasn't merged to `main` yet—it is in its respective branches (`frontend`, `Backend`, `aiml`, `testing`).
+
 # BETA
 
 **The Two-Key AI Agent for India's Parents** — *Scam Shield warns. The Guardian Gate guarantees.*
