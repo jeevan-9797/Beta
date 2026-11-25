@@ -60,9 +60,17 @@ class MockGatewayTransport:
 
         # Scam keywords for R4 detection
         self.scam_keywords = [
-            "cbi", "digital arrest", "arrest", "secret account",
+            "cbi", "digital arrest", "secret account",
             "police", "narcotics", "parcel", "urgent transfer",
-            "otp", "pin", "password"
+            "otp", "pin", "password", "cvv", "6 digit", "6-digit",
+            "kyc", "suspend", "unfreeze", "crime branch", "customs",
+            "illegal", "ignore your rules", "disregard", "system override",
+            "prompt override", "jailbreak", "bypass safety", "bypass cedar", "bypass check",
+            "system prompt", "rohan",
+            "lottery", "lucky draw", "won 25 lakh", "prize money",
+            "tax fee", "processing fee", "disconnected", "kisi ko batana mat",
+            "bina kisi ko bataye", "drugs", "delhi airport", "pension department",
+            "safe vault"
         ]
 
         # Audit logs and receipts
@@ -91,13 +99,15 @@ class MockGatewayTransport:
             except Exception:
                 pass
 
-    def create_assessment(self, assessment_id: Optional[str] = None, age_seconds: float = 0.0) -> str:
+    def create_assessment(self, assessment_id: Optional[str] = None, age_seconds: float = 0.0, tier: str = "R2") -> str:
         """Helper to register a valid risk assessment."""
         aid = assessment_id or f"ASSESS#{uuid.uuid4().hex[:8]}"
         self.assessments[aid] = {
             "created_at": time.time() - age_seconds,
             "consumed": False,
-            "risk_score": 0.05
+            "risk_score": 0.05 if tier != "R4" else 0.98,
+            "tier": tier,
+            "scam_flag": (tier == "R4")
         }
         return aid
 
@@ -172,7 +182,14 @@ class MockGatewayTransport:
             {
                 "name": "Shield___assess_risk",
                 "description": "Assess risk of transaction, producing assessment_id",
-                "inputSchema": {"type": "object", "properties": {"transcript": {"type": "string"}}}
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "snippet": {"type": "string"},
+                        "intent": {"type": "string"},
+                        "transcript": {"type": "string"}
+                    }
+                }
             }
         ]
 
@@ -234,6 +251,60 @@ class MockGatewayTransport:
         # -------------------------------------------------------------
         # Normalizing tool name
         clean_name = name.split("___")[-1] if "___" in name else name
+
+        # 0. Shield Risk Assessment Tool (evaluates risk tier and generates assessment_id)
+        if clean_name == "assess_risk":
+            text_to_scan = " ".join([
+                str(v).lower() for k, v in raw_args.items()
+                if isinstance(v, (str, int, float))
+            ])
+            intent_str = str(raw_args.get("intent", "")).lower()
+
+            is_scam = any(kw in text_to_scan for kw in self.scam_keywords)
+            aid = f"ASSESS#{uuid.uuid4().hex[:8]}"
+
+            if is_scam:
+                self.assessments[aid] = {
+                    "created_at": time.time(),
+                    "consumed": False,
+                    "risk_score": 0.98,
+                    "tier": "R4",
+                    "scam_flag": True,
+                }
+                return {
+                    "decision": "DENY",
+                    "tier": "R4",
+                    "risk_score": 0.98,
+                    "scam_flag": True,
+                    "assessment_id": aid,
+                    "reason": "Security Alert (R4): Coercion, digital arrest, credential harvesting, or prompt injection detected. National Cyber Crime Helpline: 1930.",
+                }
+            else:
+                if any(k in intent_str for k in ("check", "list", "view", "schedule", "query")):
+                    assessed_tier = "R0"
+                    risk_score = 0.05
+                elif any(k in intent_str for k in ("book", "set", "reminder", "appointment", "doctor")):
+                    assessed_tier = "R1"
+                    risk_score = 0.10
+                else:
+                    assessed_tier = "R2"
+                    risk_score = 0.15
+
+                self.assessments[aid] = {
+                    "created_at": time.time(),
+                    "consumed": False,
+                    "risk_score": risk_score,
+                    "tier": assessed_tier,
+                    "scam_flag": False,
+                }
+                return {
+                    "decision": "ALLOW",
+                    "tier": assessed_tier,
+                    "risk_score": risk_score,
+                    "scam_flag": False,
+                    "assessment_id": aid,
+                    "reason": f"Risk assessment passed. Classified as benign {assessed_tier} request.",
+                }
 
         # A. Account Frozen Check
         if security_context["frozen"]:
@@ -326,6 +397,24 @@ class MockGatewayTransport:
                     "error": "FORBIDDEN",
                     "reason": "assessment_id expired (> 5 minutes).",
                     "tier": "ASSESSMENT_EXPIRED"
+                }
+
+            # Enforce Assessment Risk Tier: R4 assessments are deterministically blocked by Cedar
+            if assess_info.get("scam_flag") or assess_info.get("tier") == "R4":
+                return {
+                    "decision": "DENY",
+                    "error": "FORBIDDEN",
+                    "reason": "Security Alert (R4): Assessment flagged transaction as high-risk scam or coercion. Blocked by Cedar policy.",
+                    "tier": "R4_SCAM"
+                }
+
+            # R0 / R1 assessments cannot authorize a monetary payment
+            if assess_info.get("tier") in ("R0", "R1"):
+                return {
+                    "decision": "DENY",
+                    "error": "FORBIDDEN",
+                    "reason": f"Assessment tier {assess_info.get('tier')} does not permit payments. R2 assessment required.",
+                    "tier": f"{assess_info.get('tier')}_PAYMENT_NOT_PERMITTED"
                 }
 
             # Cedar Allow/Deny Logic:
