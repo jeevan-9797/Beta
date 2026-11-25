@@ -59,6 +59,7 @@ Beta/
 ├── requirements.txt                   # Frozen dependencies (mcp, fastmcp, boto3, pydantic, pytest)
 ├── README.md                          # Architecture documentation & setup guide
 ├── eval_results.md                    # Benchmark evaluation report (pitch slide numbers)
+├── live_latency_report.md             # End-to-end live tool latency trace report
 ├── .gitignore                         # Python/IDE ignore rules
 ├── agent_config/
 │   ├── system_prompt.md               # Canonical Hinglish/English system prompt with de-escalation
@@ -89,7 +90,9 @@ Beta/
     ├── test_contracts.py              # Pydantic contract validation tests
     ├── test_eval_corpus.py            # Dataset structure and schema compliance tests
     ├── test_shield_mcp.py             # Shield MCP, DynamoDB single-table & Lambda handler unit tests
-    └── test_receipt.py                # Bedrock Receipt Generator unit tests
+    ├── test_receipt.py                # Bedrock Receipt Generator unit tests
+    ├── test_sync_gateway_tools.py     # Gateway sync tool tests
+    └── test_live_journeys.py          # E2E live demo journeys & latency verification
 ```
 
 ---
