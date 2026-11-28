@@ -196,7 +196,7 @@ def evaluate_policy(
     # Rule 3: R2 Auto-Pay (pay_bill and reorder_medicine)
     if (
         is_money_action
-        and amount <= 2000
+        and input_data.get("within_auto_limit", amount <= 2000)
         and payee_known
         and assessment_valid
         and (6 <= hour_ist < 23)
@@ -204,7 +204,9 @@ def evaluate_policy(
     ):
         return True, "ALLOW", {"reason": "permit: R2 auto-pay"}
 
-    # Rule 4: R3 Approved Pay (pay_bill and reorder_medicine)
+    # Rule 4: A verified replay or R3 approved pay.
+    if is_money_action and input_data.get("idempotent_replay") is True:
+        return True, "ALLOW", {"reason": "permit: cached receipt"}
     if is_money_action and approval_valid and assessment_valid and amount <= 25000:
         return True, "ALLOW", {"reason": "permit: R3 approved-pay"}
 

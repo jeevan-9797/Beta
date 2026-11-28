@@ -1,14 +1,14 @@
 # Deploy BETA to Mumbai
 
-The deployer sets up the BETA demo in AWS `ap-south-1`. It creates or updates the DynamoDB table, two IAM roles, five Python 3.12 Lambda functions, the AgentCore MCP gateway, and its Cedar policy engine.
+The deployer sets up the BETA demo in AWS `ap-south-1`. It creates or updates the DynamoDB table, two IAM roles, seven Python 3.12 Lambdas, the AgentCore MCP gateway and Cedar policy engine, and an API Gateway HTTP API with CORS.
 
 The finished gateway uses `authorizerType=NONE`. Anyone who can reach the URL can call tools that Cedar allows, including some tools that write data or send notifications. Use an isolated demo AWS account, fictional household data, and sandbox integration accounts. Sharing the URL does not restrict access to its recipients. [AgentCore inbound authorization](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway-inbound-auth.html)
 
 ## Prerequisites
 
 - Check out `Backend`. Use Python 3.12 with pip and access to PyPI or your configured package mirror. The deployer builds an x86-64 Linux Lambda zip from compatible wheels, including when run on Windows.
-- Sign in using your AWS credential chain or a named profile. The deploying identity needs STS caller identity, DynamoDB table and TTL management and seed writes, IAM role and inline-policy management, `iam:PassRole` on the two BETA roles, Lambda create/update/read actions, and AgentCore gateway, target, policy-engine, and policy create/update/read/list actions. Policy upload also needs `bedrock-agentcore:InvokeGateway` and `bedrock-agentcore:ManageResourceScopedPolicy`. Resolving a bundled Shield model requires `bedrock:GetInferenceProfile`. [AgentCore policy permissions](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/policy-permissions.html)
-- For Twilio or Google Calendar, copy `backend/.env.example` to `backend/.env` and fill in test credentials. The deployer reads `backend/.env`, then falls back to the repository-root `.env`. Use `--env-file` to select a different file. Shell variables take precedence. Twilio variables go to the Guardian Lambda. Google Calendar variables go to the Errands Lambda. `GOOGLE_SERVICE_ACCOUNT_JSON` accepts a JSON object or a path relative to the selected `.env` file. Its contents count toward Lambda’s 4 KiB environment limit.
+- Sign in using your AWS credential chain or a named profile. The deploying identity needs STS caller identity, DynamoDB table and TTL management and seed writes, IAM role and inline-policy management, `iam:PassRole` on the two BETA roles, Lambda create/update/read actions and `lambda:AddPermission`, and AgentCore gateway, target, policy-engine, and policy create/update/read/list actions. For API Gateway it needs `apigateway:GET`, `apigateway:POST`, and `apigateway:PATCH` for the HTTP API, integrations, routes, and stages. Policy upload also needs `bedrock-agentcore:InvokeGateway` and `bedrock-agentcore:ManageResourceScopedPolicy`. Resolving a Bedrock inference profile requires `bedrock:GetInferenceProfile`. [AgentCore policy permissions](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/policy-permissions.html) · [API Gateway Management IAM actions](https://docs.aws.amazon.com/service-authorization/latest/reference/list_amazonapigatewaymanagementv2.html)
+- For Twilio or Google Calendar, copy `backend/.env.example` to `backend/.env` and fill in test credentials. The deployer reads `backend/.env`, then falls back to the repository-root `.env`. Use `--env-file` to select a different file. Shell variables take precedence. The Guardian MCP and Guardian API Lambdas use Twilio for outbound messages. The webhook uses `TWILIO_AUTH_TOKEN` to verify the signature and accepts messages from `GUARDIAN_WHATSAPP_TO`. Google Calendar variables go to the Errands Lambda. `GOOGLE_SERVICE_ACCOUNT_JSON` accepts a JSON object or a path relative to the selected `.env` file. Its contents count toward Lambda’s 4 KiB environment limit.
 
 ## Choose a Shield configuration
 
@@ -33,9 +33,13 @@ The deployer scopes the source Cedar rules to the live gateway ARN and adapts nu
 
 ## Verify and share
 
-After a successful deployment, the script prints the live `gatewayUrl`, `gatewayId`, `gatewayArn`, and registered `Target___tool` names as JSON. It saves the same JSON to the gitignored `backend/deploy/deployed_outputs.json`. Cedar may filter the tools visible to a caller.
+After a successful deployment, the script prints `gatewayUrl`, `gatewayId`, `gatewayArn`, the registered tool names, `guardianApiUrl`, and `whatsappWebhookUrl`. It saves the same JSON to the gitignored `backend/deploy/deployed_outputs.json`.
 
-Send an MCP `tools/list` request to the printed `gatewayUrl`. For example, in PowerShell from the repository root:
+- **Jyotir and Jay** use `gatewayUrl` for MCP. Cedar may filter visible tools. When `HH#kamala` is frozen, the response interceptor also removes payment and medicine-reorder tools from `tools/list`.
+- **Hema** uses `guardianApiUrl` as the browser API base URL. Configure Amplify to sign requests with AWS IAM in `ap-south-1`, and grant the authenticated guardian role `execute-api:Invoke` on the specific household routes it may use. Preflight is handled by HTTP API CORS. [Guardian Console route contract](../../docs/contracts.md#guardian-console-rest-api) · [HTTP API IAM authorization](https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-access-control-iam.html)
+- **Twilio** uses `whatsappWebhookUrl` with the HTTP `POST` method in the sandbox’s inbound message settings. Use the exact URL from deployment so the signature matches. Set `GUARDIAN_WHATSAPP_TO` to the sandbox guardian’s WhatsApp number. Missing or invalid signatures and other senders receive `403`.
+
+Send an MCP `tools/list` request to `gatewayUrl` from PowerShell.
 
 ```powershell
 $gateway = Get-Content backend/deploy/deployed_outputs.json -Raw | ConvertFrom-Json
@@ -45,3 +49,5 @@ Invoke-RestMethod -Uri $gateway.gatewayUrl -Method Post -ContentType 'applicatio
 ```
 
 Confirm that `Errands___get_profile` is listed. You can then call it with `household_id` set to `kamala` to verify the seeded data and both interceptors before sharing the URL.
+
+Receipts store `summary.en` and `summary.hi`. Errands invokes the Guardian API Lambda asynchronously after saving the receipt so WhatsApp delivery does not delay the tool response. If Bedrock is unavailable the receipt uses bilingual templates. Set `BEDROCK_MODEL_ID=apac.amazon.nova-lite-v1:0` for Bedrock-generated receipts in Mumbai when the default Nova Micro profile cannot be resolved.

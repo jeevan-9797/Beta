@@ -30,6 +30,8 @@ logger = logging.getLogger(__name__)
 def _get_guardian_phone(household_id: str) -> str:
     """Retrieve guardian WhatsApp phone number from household records or settings."""
     pk = format_pk(household_id)
+    if pk == format_pk(settings.DEFAULT_HOUSEHOLD_ID) and settings.GUARDIAN_WHATSAPP_TO:
+        return settings.GUARDIAN_WHATSAPP_TO
     # Check MEMBER#ARJUN or any guardian member
     for sk in ("MEMBER#ARJUN", "MEMBER#guardian"):
         member = get_item(pk, sk)

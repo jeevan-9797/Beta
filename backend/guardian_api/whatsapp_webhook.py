@@ -23,6 +23,7 @@ from backend.common.db import (
     get_household_rules,
 )
 from backend.common.models import SKPrefix
+from backend.common.twilio_client import format_whatsapp_number
 
 logger = logging.getLogger(__name__)
 
@@ -171,7 +172,10 @@ def process_whatsapp_message(
             return "❓ No active cooling-off approvals found to cancel."
 
         app_id = target_approval.get("approval_id") or target_approval.get("SK", "").replace(SKPrefix.APPROVAL, "")
-        update_item(
+        status = target_approval.get("status")
+        if status not in {"APPROVED", "PENDING"}:
+            return f"Approval request {app_id} is {status}."
+        updated = update_item(
             hh_id,
             f"{SKPrefix.APPROVAL}{app_id}",
             {
@@ -180,7 +184,10 @@ def process_whatsapp_message(
                 "guardian_response": "CANCELLED",
                 "updated_at": now_iso,
             },
+            expected_status=status,
         )
+        if not updated:
+            return f"Approval request {app_id} changed. Reply STATUS to refresh."
         log_audit(
             household_id=hh_id,
             action="GUARDIAN_APPROVAL_CANCELLED",
@@ -244,7 +251,7 @@ def process_whatsapp_message(
                 or rules.get("cooling_off_seconds", settings.COOLING_OFF_SECONDS)
             )
             executable_at = now_epoch + cooling_off_seconds
-            update_item(
+            updated = update_item(
                 hh_id,
                 f"{SKPrefix.APPROVAL}{app_id}",
                 {
@@ -256,7 +263,10 @@ def process_whatsapp_message(
                     "responded_at": now_iso,
                     "updated_at": now_iso,
                 },
+                expected_status="PENDING",
             )
+            if not updated:
+                return f"Approval request {app_id} is no longer pending. Reply STATUS to refresh."
             log_audit(
                 household_id=hh_id,
                 action="GUARDIAN_APPROVAL_APPROVED",
@@ -286,7 +296,7 @@ def process_whatsapp_message(
                     f"Request *{app_id}* (₹{amount_val:,.2f} to {payee_val}) is approved and ready for immediate execution."
                 )
         else:
-            update_item(
+            updated = update_item(
                 hh_id,
                 f"{SKPrefix.APPROVAL}{app_id}",
                 {
@@ -295,7 +305,10 @@ def process_whatsapp_message(
                     "responded_at": now_iso,
                     "updated_at": now_iso,
                 },
+                expected_status="PENDING",
             )
+            if not updated:
+                return f"Approval request {app_id} is no longer pending. Reply STATUS to refresh."
             log_audit(
                 household_id=hh_id,
                 action="GUARDIAN_APPROVAL_DECLINED",
@@ -361,23 +374,24 @@ def lambda_handler(event: Dict[str, Any], context: Any = None) -> Dict[str, Any]
         parsed = urllib.parse.parse_qs(raw_body, keep_blank_values=True)
         form_data = {k: v[0] if v else "" for k, v in parsed.items()}
 
-    # Optional signature validation
-    if getattr(settings, "TWILIO_VALIDATE_SIGNATURE", False) and settings.TWILIO_AUTH_TOKEN:
+    if settings.TWILIO_VALIDATE_SIGNATURE:
         signature = headers_lower.get("x-twilio-signature", "")
-        # Validate only if signature header is provided or required
+        path = event.get("rawPath") or event.get("path") or ""
+        query = event.get("rawQueryString") or urllib.parse.urlencode(event.get("multiValueQueryStringParameters") or {}, doseq=True)
+        url = f"{headers_lower.get('x-forwarded-proto', 'https')}://{headers_lower.get('host', '')}{path}"
+        if query:
+            url += f"?{query}"
+        allowed_sender = format_whatsapp_number(settings.GUARDIAN_WHATSAPP_TO)
+        sender = format_whatsapp_number(form_data.get("From", ""))
+        valid = False
         try:
             from twilio.request_validator import RequestValidator
-            validator = RequestValidator(settings.TWILIO_AUTH_TOKEN)
-            url = headers_lower.get("x-forwarded-proto", "https") + "://" + headers_lower.get("host", "") + event.get("path", "")
-            if not validator.validate(url, form_data, signature):
-                logger.warning("Twilio signature validation failed.")
-                return {
-                    "statusCode": 403,
-                    "headers": {"Content-Type": "text/plain"},
-                    "body": "Forbidden: Invalid Twilio Signature",
-                }
-        except ImportError:
-            logger.warning("twilio package not available for signature validation.")
+            if settings.TWILIO_AUTH_TOKEN and signature and allowed_sender and sender == allowed_sender:
+                valid = RequestValidator(settings.TWILIO_AUTH_TOKEN).validate(url, form_data, signature)
+        except (ImportError, ValueError):
+            logger.warning("Twilio webhook signature could not be verified")
+        if not valid:
+            return {"statusCode": 403, "headers": {"Content-Type": "text/plain"}, "body": "Forbidden"}
 
     reply_text = process_whatsapp_webhook(form_data)
     twiml_xml = format_twiml_response(reply_text)

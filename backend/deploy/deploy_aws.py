@@ -27,12 +27,17 @@ TABLE = "BETA_Household"
 MODEL = "apac.amazon.nova-micro-v1:0"
 GATEWAY = "beta-guardian-gateway"
 ENGINE = "beta_guardian_policy_engine"
+HTTP_API = "beta-guardian-http-api"
+GUARDIAN_API = "beta-guardian-api"
+WHATSAPP_WEBHOOK = "beta-whatsapp-webhook"
 FUNCTIONS = {
     "beta-errands-mcp": "beta_entrypoints.errands",
     "beta-guardian-mcp": "beta_entrypoints.guardian",
     "beta-shield-mcp": "beta_entrypoints.shield",
     "beta-request-interceptor": "beta_entrypoints.request",
-    "beta-response-interceptor": "beta_entrypoints.response",
+    "beta-response-interceptor": "backend.interceptors.response_interceptor.lambda_handler",
+    GUARDIAN_API: "backend.guardian_api.handler.lambda_handler",
+    WHATSAPP_WEBHOOK: "backend.guardian_api.whatsapp_webhook.lambda_handler",
 }
 PAYMENT_TOOLS = {"pay_bill", "reorder_medicine"}
 SECURITY_PROPERTIES = {
@@ -43,11 +48,14 @@ SECURITY_PROPERTIES = {
     "approval_valid": "boolean",
     "hour_ist": "integer",
     "payments_last_hour": "integer",
+    "within_auto_limit": "boolean",
+    "idempotent_replay": "boolean",
 }
+TWILIO_KEYS = ("TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_WHATSAPP_FROM", "GUARDIAN_WHATSAPP_TO")
 INTEGRATIONS = {
-    "beta-guardian-mcp": (
-        "TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_WHATSAPP_FROM", "GUARDIAN_WHATSAPP_TO",
-    ),
+    "beta-guardian-mcp": TWILIO_KEYS,
+    GUARDIAN_API: TWILIO_KEYS,
+    WHATSAPP_WEBHOOK: ("TWILIO_AUTH_TOKEN", "GUARDIAN_WHATSAPP_TO"),
     "beta-errands-mcp": ("GOOGLE_CALENDAR_ID", "GOOGLE_SERVICE_ACCOUNT_JSON"),
 }
 
@@ -109,44 +117,6 @@ def request(event, context):
         "interceptorOutputVersion": "1.0",
         "mcp": {"transformedGatewayRequest": {"body": body}},
     }
-
-
-def sanitize(value, interceptor):
-    if isinstance(value, str):
-        return interceptor.sanitize_text(value)
-    if isinstance(value, list):
-        return [sanitize(item, interceptor) for item in value]
-    if isinstance(value, dict):
-        return {key: sanitize(item, interceptor) for key, item in value.items()}
-    return value
-
-
-def response(event, context):
-    from backend.common.config import settings
-    from backend.interceptors.response_interceptor import ResponseInterceptor
-    mcp = event["mcp"]
-    request_body = mcp["gatewayRequest"]["body"]
-    gateway_response = mcp["gatewayResponse"]
-    body = gateway_response["body"]
-    if request_body.get("method") == "tools/call" and isinstance(body, dict):
-        params = request_body.get("params", {})
-        household = (params.get("arguments") or {}).get("household_id")
-        interceptor = ResponseInterceptor(household or settings.DEFAULT_HOUSEHOLD_ID)
-        body = dict(body)
-        for field in ("result", "error"):
-            if field in body:
-                body[field] = sanitize(body[field], interceptor)
-        result = body.get("result") or {}
-        failed = "error" in body or (isinstance(result, dict) and result.get("isError"))
-        interceptor.intercept(
-            params.get("name"), result, json.dumps(result), "FAILED" if failed else "SUCCESS",
-        )
-    return {
-        "interceptorOutputVersion": "1.0",
-        "mcp": {"transformedGatewayResponse": {
-            "statusCode": gateway_response["statusCode"], "body": body,
-        }},
-    }
 '''
 
 
@@ -175,6 +145,8 @@ def settings_from_env(env_file):
     environments = {name: dict(base) for name in FUNCTIONS}
     for name, keys in INTEGRATIONS.items():
         environments[name].update({key: values[key] for key in keys if values.get(key)})
+    environments[WHATSAPP_WEBHOOK]["TWILIO_VALIDATE_SIGNATURE"] = "true"
+    environments["beta-errands-mcp"]["RECEIPT_NOTIFICATION_FUNCTION"] = GUARDIAN_API
     calendar = environments["beta-errands-mcp"]
     account = calendar.get("GOOGLE_SERVICE_ACCOUNT_JSON", "").strip()
     if account and not account.startswith("{"):
@@ -295,7 +267,9 @@ def build_zip(bundled_shield):
         (stage / "beta_entrypoints.py").write_text(
             ENTRYPOINTS.replace("__PAYMENT_ACTIONS__", repr(actions)), encoding="utf-8",
         )
-        sources = [BACKEND / directory for directory in ("common", "mcp_errands", "mcp_guardian", "interceptors")]
+        sources = [BACKEND / directory for directory in (
+            "common", "mcp_errands", "mcp_guardian", "interceptors", "guardian_api",
+        )]
         if bundled_shield:
             sources.extend((ROOT / "src/shield_mcp", ROOT / "src/shared"))
         files = [(path, path.relative_to(stage)) for path in stage.rglob("*") if path.is_file()]
@@ -553,6 +527,72 @@ def install_policies(control, policies):
     return engine["policyEngineArn"]
 
 
+def http_api_items(operation, **scope):
+    while True:
+        page = operation(**scope)
+        yield from page.get("Items", [])
+        if not page.get("NextToken"):
+            return
+        scope["NextToken"] = page["NextToken"]
+
+
+def ensure_http_api(api, lambdas, account, arns):
+    cors = {
+        "AllowOrigins": ["*"], "AllowMethods": ["GET", "POST", "PATCH", "OPTIONS"],
+        "AllowHeaders": ["authorization", "content-type", "x-amz-date", "x-amz-security-token",
+                         "x-amz-content-sha256", "x-amz-user-agent", "amz-sdk-invocation-id", "amz-sdk-request"],
+    }
+    existing = [item for item in http_api_items(api.get_apis) if item["Name"] == HTTP_API]
+    if len(existing) > 1 or (existing and existing[0]["ProtocolType"] != "HTTP"):
+        raise RuntimeError(f"Expected at most one HTTP API named {HTTP_API}.")
+    if existing:
+        info = existing[0]
+        if info.get("CorsConfiguration") != cors or info.get("DisableExecuteApiEndpoint"):
+            info = api.update_api(ApiId=info["ApiId"], CorsConfiguration=cors, DisableExecuteApiEndpoint=False)
+    else:
+        info = api.create_api(Name=HTTP_API, ProtocolType="HTTP", CorsConfiguration=cors)
+    scope = {"ApiId": info["ApiId"]}
+    integrations = {item.get("IntegrationUri"): item for item in http_api_items(api.get_integrations, **scope)}
+    routes = {item["RouteKey"]: item for item in http_api_items(api.get_routes, **scope)}
+    for function, key, source_path, authorization in (
+        (GUARDIAN_API, "ANY /api/{proxy+}", "*/api/*", "AWS_IAM"),
+        (WHATSAPP_WEBHOOK, "POST /webhook/whatsapp", "POST/webhook/whatsapp", "NONE"),
+    ):
+        arn = arns[function]
+        config = {"IntegrationUri": arn, "IntegrationType": "AWS_PROXY",
+                  "IntegrationMethod": "POST", "PayloadFormatVersion": "2.0"}
+        integration = integrations.get(arn)
+        if integration is None:
+            integration = api.create_integration(**scope, **config)
+        elif any(integration.get(field) != value for field, value in config.items()):
+            integration = api.update_integration(**scope, IntegrationId=integration["IntegrationId"], **config)
+        source_arn = f"arn:aws:execute-api:{REGION}:{account}:{scope['ApiId']}/$default/{source_path}"
+        try:
+            lambdas.add_permission(
+                FunctionName=arn, StatementId=f"beta-http-api-{scope['ApiId']}",
+                Action="lambda:InvokeFunction", Principal="apigateway.amazonaws.com", SourceArn=source_arn,
+            )
+        except lambdas.exceptions.ResourceConflictException:
+            # The statement ID includes the exact API ID and is owned by this deployer.
+            pass
+        target = f"integrations/{integration['IntegrationId']}"
+        route = routes.get(key)
+        routing = {"RouteKey": key, "Target": target, "AuthorizationType": authorization}
+        if route is None:
+            api.create_route(**scope, **routing)
+        elif any(route.get(field) != value for field, value in routing.items()):
+            api.update_route(**scope, RouteId=route["RouteId"], **routing)
+    try:
+        stage = api.get_stage(**scope, StageName="$default")
+    except api.exceptions.NotFoundException:
+        api.create_stage(**scope, StageName="$default", AutoDeploy=True)
+    else:
+        if not stage.get("AutoDeploy"):
+            api.update_stage(**scope, StageName="$default", AutoDeploy=True)
+    base = info["ApiEndpoint"].rstrip("/")
+    return {"guardianApiUrl": base, "whatsappWebhookUrl": f"{base}/webhook/whatsapp"}
+
+
 def deploy(profile, env_file):
     environments, bundled, upstream = settings_from_env(env_file)
     schemas = tool_schemas()
@@ -577,12 +617,14 @@ def deploy(profile, env_file):
         statement("logs:CreateLogGroup", f"{log_arn}/beta-*"),
         statement(["logs:CreateLogStream", "logs:PutLogEvents"], f"{log_arn}/beta-*:log-stream:*"),
         statement("bedrock:InvokeModel", bedrock_arns),
+        statement("lambda:InvokeFunction", f"arn:aws:lambda:{REGION}:{account}:function:{GUARDIAN_API}"),
     ]
     if upstream:
         permissions.append(statement("lambda:InvokeFunction", upstream))
     iam = session.client("iam", **options)
     execution_role = ensure_role(iam, "BetaLambdaExecutionRole", "lambda.amazonaws.com", permissions)
-    arns = ensure_lambdas(session.client("lambda", **options), execution_role, environments, archive)
+    lambdas = session.client("lambda", **options)
+    arns = ensure_lambdas(lambdas, execution_role, environments, archive)
 
     agentcore_arn = f"arn:aws:bedrock-agentcore:{REGION}:{account}"
     gateway_scope = f"{agentcore_arn}:gateway/{GATEWAY}-*"
@@ -590,7 +632,7 @@ def deploy(profile, env_file):
     gateway_role = ensure_role(
         iam, "BetaAgentCoreGatewayRole", "bedrock-agentcore.amazonaws.com",
         [
-            statement("lambda:InvokeFunction", list(arns.values())),
+            statement("lambda:InvokeFunction", [arn for name, arn in arns.items() if name not in {GUARDIAN_API, WHATSAPP_WEBHOOK}]),
             statement(["bedrock-agentcore:AuthorizeAction", "bedrock-agentcore:PartiallyAuthorizeActions"],
                       [gateway_scope, engine_scope]),
             statement("bedrock-agentcore:GetPolicyEngine", engine_scope),
@@ -617,7 +659,9 @@ def deploy(profile, env_file):
     gateway = ready(control.get_gateway, GATEWAY, "READY", gatewayIdentifier=gateway_id)
     if gateway.get("policyEngineConfiguration") != enforcement or gateway["authorizerType"] != "NONE":
         raise RuntimeError("Gateway did not report the requested policy and authorizer.")
-    return {**{key: gateway[key] for key in ("gatewayUrl", "gatewayId", "gatewayArn")}, "tools": sorted(tools)}
+    http_outputs = ensure_http_api(session.client("apigatewayv2", **options), lambdas, account, arns)
+    return {**{key: gateway[key] for key in ("gatewayUrl", "gatewayId", "gatewayArn")},
+            **http_outputs, "tools": sorted(tools)}
 
 
 def main():

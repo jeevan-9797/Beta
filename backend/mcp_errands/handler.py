@@ -73,6 +73,7 @@ def handle_tool_call(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any
             assessment_id=arguments.get("assessment_id", ""),
             approval_id=arguments.get("approval_id"),
             note=arguments.get("note"),
+            replay_only=arguments.get("idempotent_replay") is True,
         )
 
     elif clean_name in ("reorder_medicine", "reorder_medicines"):
@@ -86,6 +87,7 @@ def handle_tool_call(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any
             approval_id=arguments.get("approval_id"),
             note=arguments.get("note"),
             pharmacy_name=arguments.get("pharmacy_name", "Apollo Pharmacy"),
+            replay_only=arguments.get("idempotent_replay") is True,
         )
 
     # Legacy aliases

@@ -32,8 +32,10 @@ from backend.common.db import (
     get_household_members,
     get_household_rules,
     mark_assessment_consumed,
+    put_payment_and_receipt,
 )
 from backend.common.models import SKPrefix
+from backend.common.receipts import generate_receipt_summary, queue_receipt_notification
 
 logger = logging.getLogger(__name__)
 
@@ -225,7 +227,12 @@ def book_appointment(
         "timestamp": now_iso,
         "entity_type": "RECEIPT",
     }
+    receipt["summary"] = generate_receipt_summary(
+        "APPOINTMENT_BOOKING", None, doctor_name, "CONFIRMED", "Clinic visit requested",
+        "GOOGLE_CALENDAR" if is_real else "MOCK_GOOGLE_CALENDAR",
+    )
     put_item(receipt)
+    queue_receipt_notification(hh_id, tx_id)
 
     # Log AUDIT#
     log_audit(
@@ -328,6 +335,7 @@ def pay_bill(
     assessment_id: str = "",
     approval_id: Optional[str] = None,
     note: Optional[str] = None,
+    replay_only: bool = False,
     **kwargs: Any,
 ) -> Dict[str, Any]:
     """Execute bill payment via BBPS gateway with strict idempotency.
@@ -353,6 +361,8 @@ def pay_bill(
         logger.info(
             f"Idempotent payment replay detected for {hh_id} / idem_key: {idem_key}. Returning existing receipt."
         )
+        if replay_only and not receipt:
+            return {"success": False, "error": "The cached receipt is unavailable."}
         return {
             "success": True,
             "status": "ALREADY_PROCESSED",
@@ -366,6 +376,8 @@ def pay_bill(
         }
 
     # 2. Generate new transaction ID
+    if replay_only:
+        return {"success": False, "error": "The cached receipt is unavailable."}
     tx_id = f"TX_BBPS_{uuid.uuid4().hex[:10].upper()}"
 
     # 3. Write PAYMENT#<idem_key> item (idempotency anchor)
@@ -385,13 +397,7 @@ def pay_bill(
         "timestamp": now_iso,
         "entity_type": "PAYMENT",
     }
-    put_item(payment_record)
-
-    # 4. Mark assessment_id as consumed and used: True
-    if assessment_id:
-        mark_assessment_consumed(hh_id, assessment_id)
-
-    # 5. Write RECEIPT#<tx_id> labelled MOCK_BBPS
+    # Commit the receipt and payment together, conditional on idempotency key.
     receipt_record = {
         "PK": hh_id,
         "SK": f"{SKPrefix.RECEIPT}{tx_id}",
@@ -408,7 +414,13 @@ def pay_bill(
         "timestamp": now_iso,
         "entity_type": "RECEIPT",
     }
-    put_item(receipt_record)
+    receipt_record["summary"] = generate_receipt_summary(
+        "BILL_PAYMENT", amount, payee_id or bill_id, "PAID", "Utility bill requested", "MOCK_BBPS",
+    )
+    if not put_payment_and_receipt(payment_record, receipt_record):
+        return pay_bill(household_id=hh_id, idem_key=idem_key, replay_only=True)
+    if assessment_id:
+        mark_assessment_consumed(hh_id, assessment_id)
 
     # 6. Update biller status if matching biller is registered
     for b_key in [payee_id, bill_id]:
@@ -434,6 +446,7 @@ def pay_bill(
         risk_score=0.1,
         status="SUCCESS",
     )
+    queue_receipt_notification(hh_id, tx_id)
 
     return {
         "success": True,
@@ -460,6 +473,7 @@ def reorder_medicine(
     approval_id: Optional[str] = None,
     note: Optional[str] = None,
     pharmacy_name: Optional[str] = "Apollo Pharmacy",
+    replay_only: bool = False,
     **kwargs: Any,
 ) -> Dict[str, Any]:
     """Reorder chronic prescription medicines with strict idempotency and Cedar guardrails.
@@ -488,6 +502,8 @@ def reorder_medicine(
         logger.info(
             f"Idempotent medicine order replay for {hh_id} / idem_key: {idem_key}. Returning cached receipt."
         )
+        if replay_only and not receipt:
+            return {"success": False, "error": "The cached receipt is unavailable."}
         return {
             "success": True,
             "status": "ALREADY_PROCESSED",
@@ -503,6 +519,8 @@ def reorder_medicine(
         }
 
     # 2. Generate transaction ID
+    if replay_only:
+        return {"success": False, "error": "The cached receipt is unavailable."}
     tx_id = f"TX_PHARM_{uuid.uuid4().hex[:10].upper()}"
 
     # 3. Write PAYMENT#<idem_key>
@@ -522,13 +540,7 @@ def reorder_medicine(
         "timestamp": now_iso,
         "entity_type": "PAYMENT",
     }
-    put_item(payment_record)
-
-    # 4. Mark assessment_id as consumed / used: True
-    if assessment_id:
-        mark_assessment_consumed(hh_id, assessment_id)
-
-    # 5. Write RECEIPT#<tx_id> labelled MOCK_PHARMACY
+    # Commit the receipt and payment together, conditional on idempotency key.
     receipt_record = {
         "PK": hh_id,
         "SK": f"{SKPrefix.RECEIPT}{tx_id}",
@@ -546,7 +558,13 @@ def reorder_medicine(
         "timestamp": now_iso,
         "entity_type": "RECEIPT",
     }
-    put_item(receipt_record)
+    receipt_record["summary"] = generate_receipt_summary(
+        "MEDICINE_REORDER", amount, pharmacy, "CONFIRMED", "Prescription refill requested", "MOCK_PHARMACY",
+    )
+    if not put_payment_and_receipt(payment_record, receipt_record):
+        return reorder_medicine(household_id=hh_id, idem_key=idem_key, replay_only=True)
+    if assessment_id:
+        mark_assessment_consumed(hh_id, assessment_id)
 
     # 6. Audit log
     log_audit(
@@ -565,6 +583,7 @@ def reorder_medicine(
         risk_score=0.2,
         status="SUCCESS",
     )
+    queue_receipt_notification(hh_id, tx_id)
 
     return {
         "success": True,

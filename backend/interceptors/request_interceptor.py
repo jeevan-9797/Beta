@@ -20,6 +20,7 @@ from datetime import datetime, timezone, timedelta
 import json
 import logging
 import re
+from uuid import uuid4
 from typing import Any, Dict, List, Optional, Tuple
 
 from backend.common.audit import log_audit
@@ -34,6 +35,7 @@ from backend.common.db import (
     get_billers,
     get_approval,
     get_assessment,
+    get_receipt,
     query_by_prefix,
 )
 from backend.common.models import SKPrefix, SecurityFacts
@@ -42,6 +44,8 @@ logger = logging.getLogger(__name__)
 
 # Security facts that MUST NEVER be supplied by the model
 SECURITY_FIELDS = [
+    "within_auto_limit",
+    "idempotent_replay",
     "payee_known",
     "hour_ist",
     "payments_last_hour",
@@ -309,7 +313,7 @@ def compute_security_facts(
     arguments: Dict[str, Any],
     now: Optional[datetime] = None,
 ) -> Dict[str, Any]:
-    """Compute fresh truth for the 7 security facts directly from DynamoDB."""
+    """Compute the security facts directly from DynamoDB."""
     if now is None:
         now = datetime.now(timezone.utc)
 
@@ -337,6 +341,7 @@ def compute_security_facts(
     # 4. frozen (from RULE#CONFIG)
     config = get_household_config(hh_id) or {}
     frozen = bool(config.get("frozen", False))
+    auto_limit = min(float(config.get("auto_limit", 2000)), float(config.get("max_with_approval", 25000)), 25000)
 
     # 5. approval_valid
     approval_valid = verify_approval_valid(hh_id, approval_id, amount, payee_id, bill_id, now)
@@ -356,7 +361,26 @@ def compute_security_facts(
         "scam_flag": scam_flag,
         "frozen": frozen,
         "assessment_valid": assessment_valid,
+        "within_auto_limit": amount <= auto_limit,
     }
+
+
+def _is_completed_replay(household_id: str, tool_name: str, arguments: Dict[str, Any]) -> bool:
+    tool = tool_name.rsplit("___", 1)[-1]
+    keys = {"pay_bill": ("MOCK_BBPS", ("bill_id", "payee_id")),
+            "reorder_medicine": ("MOCK_PHARMACY", ("med_ids",))}
+    idem_key, assessment_id = arguments.get("idem_key"), arguments.get("assessment_id")
+    if tool not in keys or not isinstance(idem_key, str) or not idem_key or not assessment_id:
+        return False
+    payment = get_item(household_id, f"{SKPrefix.PAYMENT}{idem_key}") or {}
+    provider, fields = keys[tool]
+    if (payment.get("status") != "SUCCESS" or payment.get("provider") != provider
+            or payment.get("assessment_id") != assessment_id or payment.get("amount") != arguments.get("amount")
+            or any(payment.get(key) != arguments.get(key) for key in fields)):
+        return False
+    if tool == "reorder_medicine" and payment.get("payee_name") != (arguments.get("pharmacy_name") or "Apollo Pharmacy"):
+        return False
+    return bool(payment.get("tx_id") and get_receipt(household_id, payment["tx_id"]))
 
 
 def process_gateway_request(event: Dict[str, Any]) -> Dict[str, Any]:
@@ -396,7 +420,8 @@ def process_gateway_request(event: Dict[str, Any]) -> Dict[str, Any]:
     now_iso = now.isoformat()
 
     # Compute fresh truth from DynamoDB
-    computed_facts = compute_security_facts(household_id, original_args, now=now)
+    computed_facts = compute_security_facts(household_id, arguments, now=now)
+    computed_facts["idempotent_replay"] = _is_completed_replay(household_id, tool_name, arguments)
 
     # Inject computed facts into arguments (context.input in Cedar)
     arguments.update(computed_facts)
@@ -404,12 +429,14 @@ def process_gateway_request(event: Dict[str, Any]) -> Dict[str, Any]:
     # Write append-only AUDIT#<ts> row
     audit_row = {
         "PK": format_pk(household_id),
-        "SK": f"{SKPrefix.AUDIT}{now_iso}",
+        "SK": f"{SKPrefix.AUDIT}{now_iso}#{uuid4().hex}",
         "action": f"INTERCEPTOR_EVALUATED:{tool_name}",
         "actor": "SYSTEM:REQUEST_INTERCEPTOR",
         "tool_name": tool_name,
+        "mcp_message_id": body.get("id"),
         "original_args": original_args,
         "computed_facts": computed_facts,
+        "status": "EVALUATED",
         "timestamp": now_iso,
         "entity_type": "AUDIT",
     }

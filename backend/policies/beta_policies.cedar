@@ -52,7 +52,7 @@ permit (
     resource
 )
 when {
-    context.input.amount <= 2000 &&
+    (if context.input has within_auto_limit then context.input.within_auto_limit else context.input.amount <= 2000) &&
     context.input.payee_known &&
     context.input.assessment_valid &&
     context.input.hour_ist >= 6 &&
@@ -62,7 +62,7 @@ when {
 
 // ------------------------------------------------------------------------------
 // Rule 4: R3 Approved Pay for Errands___pay_bill and Errands___reorder_medicine
-// Allows payments up to ₹25,000 if guardian approval is valid & cooling-off elapsed
+// Allows a verified cached replay or payments up to ₹25,000 after valid guardian approval.
 // ------------------------------------------------------------------------------
 permit (
     principal,
@@ -73,9 +73,8 @@ permit (
     resource
 )
 when {
-    context.input.approval_valid &&
-    context.input.assessment_valid &&
-    context.input.amount <= 25000
+    (context.input has idempotent_replay && context.input.idempotent_replay) ||
+    (context.input.approval_valid && context.input.assessment_valid && context.input.amount <= 25000)
 };
 
 // ------------------------------------------------------------------------------

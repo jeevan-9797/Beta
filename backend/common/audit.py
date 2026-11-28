@@ -55,6 +55,7 @@ def log_audit(
     )
 
     item = event.to_item()
+    item["SK"] = f"{SKPrefix.AUDIT}{timestamp}#{uuid.uuid4().hex}"
     try:
         put_item(item)
     except Exception as e:

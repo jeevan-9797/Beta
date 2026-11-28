@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+from threading import RLock
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
@@ -59,6 +60,7 @@ class MockDatabase:
     def __init__(self, persistence_file: Optional[str] = None):
         self.persistence_file = persistence_file or settings.MOCK_DB_FILE
         self._store: Dict[str, Dict[str, Any]] = {}
+        self._update_lock = RLock()
         self._load_from_file()
 
     def _make_key(self, pk: str, sk: str) -> str:
@@ -93,7 +95,7 @@ class MockDatabase:
         item = self._store.get(key)
         return dict(item) if item else None
 
-    def put_item(self, item: Dict[str, Any]) -> Dict[str, Any]:
+    def put_item(self, item: Dict[str, Any], *, if_absent: bool = False) -> Optional[Dict[str, Any]]:
         pk = format_pk(item.get("PK", ""))
         sk = str(item.get("SK", ""))
         if not pk or not sk:
@@ -103,8 +105,11 @@ class MockDatabase:
         normalized["PK"] = pk
         normalized["SK"] = sk
         key = self._make_key(pk, sk)
-        self._store[key] = normalized
-        self._persist_to_file()
+        with self._update_lock:
+            if if_absent and key in self._store:
+                return None
+            self._store[key] = normalized
+            self._persist_to_file()
         return normalized
 
     def delete_item(self, pk: str, sk: str) -> bool:
@@ -142,20 +147,31 @@ class MockDatabase:
         return results
 
     def update_item(
-        self, pk: str, sk: str, updates: Dict[str, Any]
+        self, pk: str, sk: str, updates: Dict[str, Any], *, expected_status: Optional[str] = None
     ) -> Optional[Dict[str, Any]]:
         pk_formatted = format_pk(pk)
         key = self._make_key(pk_formatted, sk)
-        item = self._store.get(key)
-        if not item:
-            return None
-        item.update(updates)
-        self._persist_to_file()
-        return dict(item)
+        with self._update_lock:
+            item = self._store.get(key)
+            if not item or (expected_status is not None and item.get("status") != expected_status):
+                return None
+            item.update(updates)
+            self._persist_to_file()
+            return dict(item)
 
     def batch_write_items(self, items: List[Dict[str, Any]]) -> None:
         for item in items:
             self.put_item(item)
+
+    def put_payment_and_receipt(self, payment: Dict[str, Any], receipt: Dict[str, Any]) -> bool:
+        with self._update_lock:
+            payment_key = self._make_key(payment["PK"], payment["SK"])
+            if payment_key in self._store:
+                return False
+            self._store[payment_key] = dict(payment)
+            self._store[self._make_key(receipt["PK"], receipt["SK"])] = dict(receipt)
+            self._persist_to_file()
+            return True
 
     def clear(self) -> None:
         self._store.clear()
@@ -179,7 +195,7 @@ class DynamoDatabase:
         pk_formatted = format_pk(pk)
         try:
             response = self._table.get_item(
-                Key={"PK": pk_formatted, "SK": sk}
+                Key={"PK": pk_formatted, "SK": sk}, ConsistentRead=True,
             )
             item = response.get("Item")
             return _from_dynamo_friendly(item) if item else None
@@ -187,7 +203,7 @@ class DynamoDatabase:
             logger.error(f"DynamoDB get_item error: {e}")
             raise
 
-    def put_item(self, item: Dict[str, Any]) -> Dict[str, Any]:
+    def put_item(self, item: Dict[str, Any], *, if_absent: bool = False) -> Optional[Dict[str, Any]]:
         pk = format_pk(item.get("PK", ""))
         sk = str(item.get("SK", ""))
         if not pk or not sk:
@@ -198,9 +214,12 @@ class DynamoDatabase:
         normalized["SK"] = sk
         dynamo_item = _to_dynamo_friendly(normalized)
         try:
-            self._table.put_item(Item=dynamo_item)
+            condition = {"ConditionExpression": "attribute_not_exists(PK)"} if if_absent else {}
+            self._table.put_item(Item=dynamo_item, **condition)
             return normalized
         except ClientError as e:
+            if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
+                return None
             logger.error(f"DynamoDB put_item error: {e}")
             raise
 
@@ -222,13 +241,19 @@ class DynamoDatabase:
                 sk_prefix
             )
             query_kwargs: Dict[str, Any] = {
-                "KeyConditionExpression": key_condition
+                "KeyConditionExpression": key_condition, "ConsistentRead": True,
             }
             if limit:
                 query_kwargs["Limit"] = limit
 
             response = self._table.query(**query_kwargs)
             items = response.get("Items", [])
+            while response.get("LastEvaluatedKey") and (limit is None or len(items) < limit):
+                query_kwargs["ExclusiveStartKey"] = response["LastEvaluatedKey"]
+                if limit is not None:
+                    query_kwargs["Limit"] = limit - len(items)
+                response = self._table.query(**query_kwargs)
+                items.extend(response.get("Items", []))
             return [_from_dynamo_friendly(item) for item in items]
         except ClientError as e:
             logger.error(f"DynamoDB query_by_prefix error: {e}")
@@ -247,7 +272,7 @@ class DynamoDatabase:
             raise
 
     def update_item(
-        self, pk: str, sk: str, updates: Dict[str, Any]
+        self, pk: str, sk: str, updates: Dict[str, Any], *, expected_status: Optional[str] = None
     ) -> Optional[Dict[str, Any]]:
         pk_formatted = format_pk(pk)
         if not updates:
@@ -265,6 +290,11 @@ class DynamoDatabase:
             values[value_name] = _to_dynamo_friendly(v)
 
         update_expr = "SET " + ", ".join(expr_parts)
+        condition = {}
+        if expected_status is not None:
+            names["#expected_status"] = "status"
+            values[":expected_status"] = expected_status
+            condition["ConditionExpression"] = "#expected_status = :expected_status"
 
         try:
             response = self._table.update_item(
@@ -273,9 +303,12 @@ class DynamoDatabase:
                 ExpressionAttributeNames=names,
                 ExpressionAttributeValues=values,
                 ReturnValues="ALL_NEW",
+                **condition,
             )
             return _from_dynamo_friendly(response.get("Attributes"))
         except ClientError as e:
+            if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
+                return None
             logger.error(f"DynamoDB update_item error: {e}")
             raise
 
@@ -292,6 +325,21 @@ class DynamoDatabase:
         except ClientError as e:
             logger.error(f"DynamoDB batch_write_items error: {e}")
             raise
+
+    def put_payment_and_receipt(self, payment: Dict[str, Any], receipt: Dict[str, Any]) -> bool:
+        try:
+            self._table.meta.client.transact_write_items(TransactItems=[
+                {"Put": {"TableName": self.table_name, "Item": _to_dynamo_friendly(payment),
+                         "ConditionExpression": "attribute_not_exists(PK)"}},
+                {"Put": {"TableName": self.table_name, "Item": _to_dynamo_friendly(receipt)}},
+            ])
+        except ClientError as error:
+            reasons = error.response.get("CancellationReasons") or []
+            if (error.response["Error"]["Code"] == "TransactionCanceledException" and reasons
+                    and reasons[0].get("Code") == "ConditionalCheckFailed"):
+                return False
+            raise
+        return True
 
 
 # Singleton Database Instance Manager
@@ -330,6 +378,15 @@ def put_item(item: Dict[str, Any]) -> Dict[str, Any]:
     return get_db().put_item(item)
 
 
+def put_item_if_absent(item: Dict[str, Any]) -> bool:
+    return get_db().put_item(item, if_absent=True) is not None
+
+
+def put_payment_and_receipt(payment: Dict[str, Any], receipt: Dict[str, Any]) -> bool:
+    """Commit both financial records once for a given payment key."""
+    return get_db().put_payment_and_receipt(payment, receipt)
+
+
 def delete_item(pk: str, sk: str) -> bool:
     return get_db().delete_item(pk, sk)
 
@@ -344,8 +401,10 @@ def query_all_for_household(pk: str) -> List[Dict[str, Any]]:
     return get_db().query_pk(pk)
 
 
-def update_item(pk: str, sk: str, updates: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    return get_db().update_item(pk, sk, updates)
+def update_item(
+    pk: str, sk: str, updates: Dict[str, Any], *, expected_status: Optional[str] = None
+) -> Optional[Dict[str, Any]]:
+    return get_db().update_item(pk, sk, updates, expected_status=expected_status)
 
 
 def batch_write_items(items: List[Dict[str, Any]]) -> None:

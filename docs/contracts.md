@@ -116,10 +116,10 @@ Executes payment for an electricity, water, gas, or broadband bill for the elder
   - `note` (string, optional): Contextual note from parent speech
 
 - **Interceptor-Injected Security Facts (in `context.input` for Cedar):**
-  - `payee_known`, `hour_ist`, `payments_last_hour`, `approval_valid`, `scam_flag`, `frozen`, `assessment_valid`
+  - `payee_known`, `hour_ist`, `payments_last_hour`, `approval_valid`, `scam_flag`, `frozen`, `assessment_valid`, `within_auto_limit`, `idempotent_replay`
 
 - **Execution Semantics:**
-  - **Strict Idempotency:** Conditional check on `PAYMENT#<idem_key>`. If it exists, returns existing receipt without re-charging.
+  - **Strict Idempotency.** The payment and receipt are written together once per `PAYMENT#<idem_key>`. A matching gateway retry returns the existing receipt without creating a new payment, including after the original assessment has been consumed.
   - **Single-Use Assessment:** Marks `assessment_id` as `consumed: true`.
   - **Receipt Generation:** Writes `RECEIPT#<tx_id>` labelled `provider: "MOCK_BBPS"`.
 
@@ -294,30 +294,101 @@ Immediately sets `frozen = true` in DynamoDB.
 
 ---
 
-## 7. Guardian REST API & Twilio WhatsApp Webhook
+## Guardian Console REST API
 
-Base URL: `http://localhost:8000` (or API Gateway URL)
+Use `guardianApiUrl` from `backend/deploy/deployed_outputs.json` as the base URL. The deployed `/api/` route uses AWS IAM authorization. Sign requests in Amplify for service `execute-api`, region `ap-south-1`, using the authenticated guardian role. The role needs `execute-api:Invoke` for its household's routes. Use `kamala` or URL-encoded `HH%23kamala` as the path segment for the seeded household. Responses use `HH#kamala`.
 
-### Endpoints
+### `GET /api/household/{household_id}/state`
 
-| Method | Route | Description |
-|---|---|---|
-| `GET` | `/health` | Health check probe. |
-| `GET` | `/api/household/{household_id}/status` | Complete household status: members, rules, pending approvals, billers. |
-| `GET` | `/api/household/{household_id}/approvals` | List all historical and pending approvals. |
-| `POST` | `/api/household/{household_id}/approvals/{approval_id}/action` | Guardian dashboard approve/reject action. |
-| `POST` | `/api/household/{household_id}/emergency_freeze` | Toggle emergency freeze kill switch. |
-| `GET` | `/api/household/{household_id}/audit_log` | Retrieve compliance audit trail (newest first). |
-| `POST` | `/api/webhook/whatsapp` | Twilio incoming WhatsApp webhook. |
+Returns the parent and guardian, active rules, and pending or approved requests. An approved request is `APPROVED` while `seconds_remaining > 0`, then `READY`. The API computes the countdown at request time. `approved_at` and `executable_at` are UTC epoch seconds.
+
+```json
+{
+  "household_id": "HH#kamala",
+  "profile": {
+    "parent": {"SK": "MEMBER#KAMALA", "name": "Kamala", "role": "PARENT"},
+    "guardian": {"SK": "MEMBER#ARJUN", "name": "Arjun", "role": "GUARDIAN"}
+  },
+  "rules": {"frozen": false, "auto_limit": 2000, "max_with_approval": 25000, "cooling_off_seconds": 20},
+  "approvals": [
+    {"approval_id": "APR_12AB34CD", "status": "APPROVED", "amount": 3800, "payee_name": "Apollo Pharmacy", "executable_at": 1795852820, "seconds_remaining": 13}
+  ]
+}
+```
+
+### `GET /api/household/{household_id}/feed`
+
+Returns up to 50 audit events, newest first. `computed_facts` carries the server-side facts for request evaluation rows. Response interceptor rows carry `cedar_decision` when the gateway response indicates `ALLOW` or `DENY`. Other rows can have `null`. `status` describes that event independently. Tool-call request and response rows include `mcp_message_id` when available. [AgentCore policy response formats](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/use-gateway-with-policy.html)
+
+```json
+{
+  "feed": [
+    {"action": "INTERCEPTOR_EVALUATED:Errands___pay_bill", "tool_name": "Errands___pay_bill", "timestamp": "2026-11-28T09:20:00+00:00", "computed_facts": {"frozen": false, "within_auto_limit": true}, "cedar_decision": null, "status": "EVALUATED"}
+  ]
+}
+```
+
+### `GET /api/household/{household_id}/receipts`
+
+Returns up to 20 receipts, newest first. New bill, medicine, and appointment receipts include English and Hindi or Hinglish summaries. Older receipts may omit `summary`.
+
+```json
+{
+  "receipts": [
+    {"receipt_id": "TX_BBPS_1234", "amount": 1240, "status": "PAID", "provider": "MOCK_BBPS", "timestamp": "2026-11-28T09:20:10+00:00", "summary": {"en": "In the demo, BETA paid BESCOM ₹1,240.00 for your utility bill.", "hi": "डेमो में बीटा ने आपके बिजली के बिल के लिए BESCOM को ₹1,240.00 का भुगतान किया।"}}
+  ]
+}
+```
+
+### `POST /api/household/{household_id}/approvals/{approval_id}/action`
+
+Send one of `APPROVE`, `DECLINE`, or `CANCEL`. Approval starts the configured cooling-off period. Cancellation can revoke an approved request during cooling-off. A successful action records an audit event. An expired or incompatible approval state returns `409`.
+
+```json
+{"action": "APPROVE"}
+```
+
+```json
+{"approval": {"approval_id": "APR_12AB34CD", "status": "APPROVED", "approved_at": 1795852800, "executable_at": 1795852820, "seconds_remaining": 20}}
+```
+
+### `POST /api/household/{household_id}/freeze`
+
+Send a Boolean `frozen`. The response returns the saved state and its UTC timestamp. Freezing blocks financial calls and removes the payment and reorder tools from the demo household's tool list.
+
+```json
+{"frozen": true}
+```
+
+```json
+{"frozen": true, "updated_at": "2026-11-28T09:21:00+00:00"}
+```
+
+### `PATCH /api/household/{household_id}/rules`
+
+Send `auto_limit` as a finite number of rupees greater than or equal to zero, `cooling_off_seconds` as an integer of at least five, or both. The response echoes the changed fields and `updated_at`. The existing maximum payment ceiling still applies.
+
+```json
+{"auto_limit": 1500, "cooling_off_seconds": 30}
+```
+
+```json
+{"auto_limit": 1500, "cooling_off_seconds": 30, "updated_at": "2026-11-28T09:22:00+00:00"}
+```
+
+### CORS and errors
+
+`OPTIONS` preflights require no request body. The Lambda returns `204` for direct v1 or v2 preflight events and sets `Access-Control-Allow-Origin: *`. The deployed HTTP API handles browser preflight. Error bodies have the form `{"error":"Approval request not found"}`. Invalid payloads return `400`, missing resources return `404`, and approval conflicts return `409`.
 
 ### Twilio WhatsApp Command Protocol
 
-When Arjun replies to Twilio WhatsApp messages:
+Twilio sends signed `POST /webhook/whatsapp` requests to `whatsappWebhookUrl`. The deployment accepts commands from the configured guardian number.
 
 | Inbound WhatsApp Body | System Reaction |
 |---|---|
-| `APPROVE <approval_id>` or `YES` | Sets approval status to `APPROVED` (only if cooling-off timer has elapsed). |
-| `REJECT <approval_id>` or `NO` | Sets approval status to `REJECTED`. |
+| `APPROVE <approval_id>` or `YES` | Sets approval status to `APPROVED` and starts cooling-off. |
+| `DECLINE <approval_id>` or `NO` | Sets approval status to `DECLINED`. |
+| `CANCEL` | Cancels the current cooling-off approval. |
 | `FREEZE` | Immediately sets `frozen = true` and halts all transactions. |
 | `UNFREEZE` | Restores normal transaction operations. |
 | `STATUS` | Replies with count and IDs of pending approval requests. |
