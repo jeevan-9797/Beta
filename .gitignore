@@ -5,6 +5,7 @@ __pycache__/
 
 # Local mock database & environment files
 backend/.mock_db.json
+backend/deploy/deployed_outputs.json
 .mock_db.json
 .env
 .venv/
