@@ -263,7 +263,7 @@ def cedar_policies(gateway_arn, schemas):
         # JSON Schema `number` maps to Cedar Decimal. Optional injected facts need `has` guards.
         raw = re.sub(
             r"context\.input\.amount <= (\d+)",
-            r'context.input.amount.lessThanOrEqual(decimal("\1"))', raw,
+            r'context.input.amount.lessThanOrEqual(decimal("\1.0"))', raw,
         )
         if raw.startswith("permit") and "when {" in raw:
             fields = sorted(set(re.findall(r"context\.input\.(\w+)", raw)))
